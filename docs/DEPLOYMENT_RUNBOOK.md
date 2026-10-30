@@ -66,8 +66,12 @@ app id was given. `--dry-run` prints the actions without executing.
 - Connect the branch: **`test`** for the test account, **`production`** for the
   production account. (GitHub receives only these two branches via the Forgejo
   one-way mirror; `master`/`feat/*` are never mirrored.)
-- Set the app **platform to `WEB_COMPUTE`** (Amplify Gen 2 full-stack needs the
-  compute platform so the backend phase runs).
+- Keep the app **platform `WEB`** (the default). This is a **static** React/Vite
+  SPA — there is NO server-side rendering. Per AWS Amplify docs, `WEB` is for
+  static apps and `WEB_COMPUTE` is only for SSR. The Gen 2 backend (Cognito pool
+  + the map auth role) is deployed by `ampx pipeline-deploy` in the build's
+  `backend` phase (see `amplify.yml`); that does NOT require `WEB_COMPUTE` —
+  compute hosting is for runtime SSR, not for CI-time backend provisioning.
 - Ensure the **service role from step 1 is attached** (App settings → IAM roles).
 
 ---
@@ -131,7 +135,7 @@ Then confirm the running app:
 
 **TEST account (<AWS_TEST_ACCOUNT_ID>) — current app `<TEST_AMPLIFY_APP_ID>`:**
 - [ ] `scripts/account-bootstrap.sh --profile <test> --region eu-west-1 --app-id <TEST_AMPLIFY_APP_ID> --managed-admin true`
-- [ ] Set app platform to `WEB_COMPUTE` if not already.
+- [ ] Confirm app platform is `WEB` (static SPA — do NOT switch to WEB_COMPUTE).
 - [ ] Re-trigger the `test` branch build; watch the backend phase succeed.
 - [ ] `scripts/preflight.sh --live --profile <test> --region eu-west-1 --app-id <TEST_AMPLIFY_APP_ID>` → PASS.
 - [ ] Confirm real v2 tiles (not OSM) in the browser.
@@ -139,6 +143,6 @@ Then confirm the running app:
 **Fresh PRODUCTION account (separate; owner-executed, never Kiro Crew):**
 - [ ] `npx cdk bootstrap aws://<PROD_ACCOUNT>/<REGION>` (or let the script do it).
 - [ ] `scripts/account-bootstrap.sh --profile <prod> --region <REGION> --app-id <prod_app_id> --managed-admin false`
-- [ ] Create the Amplify app, connect GitHub `production` branch, platform `WEB_COMPUTE`, attach the role.
+- [ ] Create the Amplify app, connect GitHub `production` branch, platform `WEB` (static SPA), attach the role.
 - [ ] Push to `production` (via the approved Forgejo PR → mirror); watch the first build.
 - [ ] `scripts/preflight.sh --live ...` + browser check.

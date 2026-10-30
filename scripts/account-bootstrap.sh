@@ -8,6 +8,20 @@
 # Amplify Hosting does on its own once this has run). Kiro Crew's restricted
 # principal cannot run this and must not try.
 #
+# WHERE TO RUN IT (security): execute this from a SEPARATE, trusted admin
+# machine that holds (or vends, via `aws sso login` / credential_process) the
+# IAM-admin credentials. Administrator credentials must NEVER be stored on, or
+# copied to, the Kiro Crew VM. The script reads credentials only through the
+# AWS CLI `--profile` you pass (the SDK resolves them); it never writes, echoes,
+# or persists any credential. Nothing here depends on running on the Kiro Crew
+# host — it only needs the AWS CLI, python3, and (for first-time bootstrap) npx.
+#
+# PRODUCTION SCOPED POLICY CAVEAT: with --managed-admin false the role gets the
+# scoped inline policy in infra/amplify-service-role.yaml. That policy is a
+# best-effort least-privilege starting point and is NOT yet verified against a
+# real end-to-end Amplify Gen 2 deploy — treat it as UNVERIFIED, not
+# production-ready, until a live deploy confirms it (see the template header).
+#
 # It is PARAMETERIZED (no hardcoded account/region/app/profile), IDEMPOTENT
 # (safe to rerun — CloudFormation create-or-update; CDK bootstrap is a no-op if
 # current), and does three things:
@@ -93,15 +107,30 @@ ROLE_ARN="$($AWS cloudformation describe-stacks --stack-name "$STACK_NAME" \
 echo "  service role ARN: ${ROLE_ARN:-<pending>}"
 
 # ---- 3. Associate the role with the Amplify app -----------------------------
+# This step sets ONLY the service role. It NEVER changes the app's hosting
+# platform: `update-app` is called with --iam-service-role-arn and nothing else,
+# so --platform is never sent and the existing platform is preserved verbatim.
+# This app is a STATIC SPA and must stay platform WEB (not WEB_COMPUTE).
 if [ -n "$APP_ID" ] && [ -n "$ROLE_ARN" ]; then
   echo "== 3. Associate role with Amplify app $APP_ID =="
+  # Read (never write) the current platform and surface it for the operator.
+  CURRENT_PLATFORM="$($AWS amplify get-app --app-id "$APP_ID" --query app.platform --output text 2>/dev/null || echo "unknown")"
+  echo "  current app platform: $CURRENT_PLATFORM (this script will NOT change it)"
+  if [ "$CURRENT_PLATFORM" = "WEB_COMPUTE" ]; then
+    echo "  NOTE: platform is WEB_COMPUTE, but this is a static SPA — WEB is expected."
+    echo "        Not changing it automatically. Review/correct in the Amplify console if intended."
+  fi
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "  [dry-run] would run: aws amplify update-app --app-id $APP_ID --iam-service-role-arn $ROLE_ARN"
+    echo "  [dry-run] (platform is NOT part of this call and is left unchanged)"
   else
+    # Only the service role is set; platform is intentionally omitted.
     $AWS amplify update-app --app-id "$APP_ID" --iam-service-role-arn "$ROLE_ARN" >/dev/null
     SAVED="$($AWS amplify get-app --app-id "$APP_ID" --query app.iamServiceRoleArn --output text)"
+    PLATFORM_AFTER="$($AWS amplify get-app --app-id "$APP_ID" --query app.platform --output text)"
     echo "  saved iamServiceRoleArn: $SAVED"
-    [ "$SAVED" = "$ROLE_ARN" ] && echo "  VERIFIED: role associated." || echo "  WARN: saved ARN does not match."
+    echo "  platform after (unchanged): $PLATFORM_AFTER"
+    [ "$SAVED" = "$ROLE_ARN" ] && echo "  VERIFIED: role associated." || { echo "  ERROR: saved ARN does not match." >&2; exit 1; }
   fi
 else
   echo "== 3. Skipped app association (no --app-id given; create the app first, then rerun) =="

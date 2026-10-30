@@ -14,6 +14,16 @@ Description: >
   No account IDs, profiles, hostnames or credentials are hardcoded — everything
   is parameterized or derived from the deploy context (AWS::AccountId / Region).
 
+  PERMISSIONS STATUS:
+    * UseAdministratorAccessAmplify=true  -> AWS-managed AdministratorAccess-Amplify.
+      Broad; known-sufficient for Amplify Gen 2 deploys. Use for TEST / bring-up.
+    * UseAdministratorAccessAmplify=false -> the scoped inline policy below.
+      This scoped policy is a best-effort least-privilege STARTING POINT and is
+      **UNVERIFIED** against a full end-to-end `ampx pipeline-deploy`. It may be
+      missing actions real deploys need (e.g. additional CloudFormation/S3/IAM
+      PassRole/Location calls). Do NOT treat it as production-ready until a live
+      deploy in a real account confirms it; widen iteratively from deploy logs.
+
 Parameters:
   AmplifyAppId:
     Type: String
