@@ -192,3 +192,54 @@ guards pass, so quiet cycles are no-ops.
 
 Nothing about this script touches `production`, branch protection, GitHub
 mirroring, or AWS — those remain owner-gated per §3–§7.
+
+---
+
+## 9. Final sync trigger — event-driven `post-merge` hook
+
+Automatic sync is **event-driven**, not cron-polled. The trigger is a git
+`post-merge` hook at `.git/hooks/post-merge`:
+
+- Fires the instant a merge completes **on `master`** (i.e. a `feat/*`
+  integration lands). On any other branch it exits 0 and does nothing.
+- Calls `scripts/forgejo-sync.sh --push`, which re-runs every guard (clean tree,
+  fetch-first, fast-forward-only, full verification, branch allow-list) and
+  pushes **only `master`** — never production, tags, or feature branches.
+- If any guard fails (tests red, remote diverged, dirty tree), it declines to
+  push, logs to `.forgejo-sync.log`, and **does not affect the merge**.
+
+**No cron job is used** — reliable post-integration triggering already exists
+via the hook, so periodic polling would be redundant (per the workflow
+requirement to avoid unnecessary periodic pushes).
+
+### What is automatic vs manual
+
+| Action | Trigger |
+|---|---|
+| Push `master` after an integration merge | **Automatic** (post-merge hook) |
+| Publish a `feat/*` branch | **Manual + explicit**: `scripts/forgejo-sync.sh --push` while on that branch |
+| Push `production` / tags / other refs | **Never** (by design) |
+
+### Note: the hook is not version-controlled
+
+Git hooks live under `.git/` and are not committed. To (re)install on a fresh
+clone, copy the hook body from this section or run:
+
+```bash
+install -m 0755 /dev/stdin .git/hooks/post-merge <<'HOOK'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "${FORGEJO_SYNC_DISABLE:-0}" = "1" ] && exit 0
+REPO_DIR="/workspace/projects/aws-map-it"
+[ "$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)" = "master" ] || exit 0
+"$REPO_DIR/scripts/forgejo-sync.sh" --push || { echo "[post-merge] sync declined (see .forgejo-sync.log)" >&2; exit 0; }
+HOOK
+```
+
+### How to disable the automatic sync
+
+- One-off: `FORGEJO_SYNC_DISABLE=1 git merge ...` (hook self-skips), or
+- Permanently: `rm .git/hooks/post-merge`, or
+- Sever sync entirely: remove `core.sshCommand` / the host key.
+
+Manual `scripts/forgejo-sync.sh --push` still works regardless.
