@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+#
+# account-bootstrap.sh — ONE-TIME privileged AWS account bootstrap for
+# AWS Region Resilience Explorer (Amplify Gen 2).
+#
+# Run by an OPERATOR/OWNER with IAM-admin in the target account. This is the
+# privileged provisioning step, separate from routine app deployment (which
+# Amplify Hosting does on its own once this has run). Kiro Crew's restricted
+# principal cannot run this and must not try.
+#
+# It is PARAMETERIZED (no hardcoded account/region/app/profile), IDEMPOTENT
+# (safe to rerun — CloudFormation create-or-update; CDK bootstrap is a no-op if
+# current), and does three things:
+#   1. Ensures CDK bootstrap (version >= 6) exists in the account/region.
+#   2. Deploys infra/amplify-service-role.yaml (the Amplify backend deploy role).
+#   3. Associates that role with the Amplify app (if --app-id is a real id).
+#
+# USAGE:
+#   scripts/account-bootstrap.sh \
+#     --profile <aws_profile> --region <region> \
+#     --app-id <amplify_app_id | ""> \
+#     [--role-name <name>] [--managed-admin true|false] [--dry-run]
+#
+# Examples:
+#   # TEST account, existing app, broad managed policy for bring-up:
+#   scripts/account-bootstrap.sh --profile morbv-customer --region eu-west-1 \
+#     --app-id d13a9ux0arcbrs --managed-admin true
+#   # Fresh account, no app yet (wildcard trust), scoped policy:
+#   scripts/account-bootstrap.sh --profile prod-admin --region eu-west-1 \
+#     --app-id "" --managed-admin false
+
+set -euo pipefail
+
+PROFILE="" REGION="" APP_ID="" ROLE_NAME="amplify-backend-deploy-aws-map-it"
+MANAGED_ADMIN="true" DRY_RUN=0
+STACK_NAME="aws-map-it-amplify-service-role"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TEMPLATE="$HERE/infra/amplify-service-role.yaml"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --profile) PROFILE="$2"; shift 2;;
+    --region) REGION="$2"; shift 2;;
+    --app-id) APP_ID="$2"; shift 2;;
+    --role-name) ROLE_NAME="$2"; shift 2;;
+    --managed-admin) MANAGED_ADMIN="$2"; shift 2;;
+    --dry-run) DRY_RUN=1; shift;;
+    *) echo "unknown arg: $1" >&2; exit 2;;
+  esac
+done
+
+[ -n "$PROFILE" ] && [ -n "$REGION" ] || { echo "ERROR: --profile and --region are required" >&2; exit 2; }
+AWS="aws --profile $PROFILE --region $REGION"
+
+echo "== Pre-flight: confirm identity and account =="
+IDENT_JSON="$($AWS sts get-caller-identity --output json)"
+ACCOUNT="$(echo "$IDENT_JSON" | python3 -c 'import sys,json;print(json.load(sys.stdin)["Account"])')"
+echo "  account: $ACCOUNT   region: $REGION   profile: $PROFILE"
+echo "  identity: $(echo "$IDENT_JSON" | python3 -c 'import sys,json;print(json.load(sys.stdin)["Arn"])')"
+
+# ---- 1. CDK bootstrap (idempotent) -----------------------------------------
+echo "== 1. CDK bootstrap check (need version >= 6) =="
+BOOTSTRAP_VER="$($AWS ssm get-parameter --name /cdk-bootstrap/hnb659fds/version --query Parameter.Value --output text 2>/dev/null || echo "none")"
+if [ "$BOOTSTRAP_VER" = "none" ] || [ "$BOOTSTRAP_VER" -lt 6 ] 2>/dev/null; then
+  echo "  bootstrap missing/old (got: $BOOTSTRAP_VER). Run:"
+  echo "    npx cdk bootstrap aws://$ACCOUNT/$REGION --profile $PROFILE"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    npx cdk bootstrap "aws://$ACCOUNT/$REGION" --profile "$PROFILE"
+  fi
+else
+  echo "  bootstrap OK (version $BOOTSTRAP_VER)"
+fi
+
+# ---- 2. Deploy the service-role stack (create-or-update = idempotent) -------
+echo "== 2. Deploy Amplify backend deploy role (stack: $STACK_NAME) =="
+APP_PARAM="${APP_ID:-*}"; [ -z "$APP_ID" ] && APP_PARAM="*"
+echo "  template: $TEMPLATE"
+echo "  params: AmplifyAppId=$APP_PARAM RoleName=$ROLE_NAME UseAdministratorAccessAmplify=$MANAGED_ADMIN"
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "  [dry-run] would run: aws cloudformation deploy --stack-name $STACK_NAME ..."
+else
+  $AWS cloudformation deploy \
+    --stack-name "$STACK_NAME" \
+    --template-file "$TEMPLATE" \
+    --capabilities CAPABILITY_NAMED_IAM \
+    --parameter-overrides \
+      AmplifyAppId="$APP_PARAM" \
+      RoleName="$ROLE_NAME" \
+      UseAdministratorAccessAmplify="$MANAGED_ADMIN"
+fi
+ROLE_ARN="$($AWS cloudformation describe-stacks --stack-name "$STACK_NAME" \
+  --query "Stacks[0].Outputs[?OutputKey=='ServiceRoleArn'].OutputValue" --output text 2>/dev/null || echo "")"
+echo "  service role ARN: ${ROLE_ARN:-<pending>}"
+
+# ---- 3. Associate the role with the Amplify app -----------------------------
+if [ -n "$APP_ID" ] && [ -n "$ROLE_ARN" ]; then
+  echo "== 3. Associate role with Amplify app $APP_ID =="
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "  [dry-run] would run: aws amplify update-app --app-id $APP_ID --iam-service-role-arn $ROLE_ARN"
+  else
+    $AWS amplify update-app --app-id "$APP_ID" --iam-service-role-arn "$ROLE_ARN" >/dev/null
+    SAVED="$($AWS amplify get-app --app-id "$APP_ID" --query app.iamServiceRoleArn --output text)"
+    echo "  saved iamServiceRoleArn: $SAVED"
+    [ "$SAVED" = "$ROLE_ARN" ] && echo "  VERIFIED: role associated." || echo "  WARN: saved ARN does not match."
+  fi
+else
+  echo "== 3. Skipped app association (no --app-id given; create the app first, then rerun) =="
+fi
+
+echo "== Bootstrap complete. Routine deploys now run via Amplify Hosting (ampx pipeline-deploy). =="
