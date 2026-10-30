@@ -92,8 +92,8 @@ export default function MapView({
   // it exchanges anonymous Cognito guest credentials and SigV4-signs every
   // style/tile/glyph/sprite request to *.amazonaws.com. That resolution is
   // async, so map construction is deferred into an async closure with a
-  // cancellation guard. On the OSM fallback / API-key paths no transformRequest
-  // is needed and the map is built immediately.
+  // cancellation guard. On the OSM fallback path no transformRequest is needed
+  // and the map is built immediately.
   useEffect(() => {
     if (!nodeRef.current || mapRef.current) return;
     let cancelled = false;

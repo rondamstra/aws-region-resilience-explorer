@@ -50,7 +50,7 @@ export default function App() {
           title={
             isProductionMapStyle()
               ? 'Rendering the Amazon Location Service Maps v2 (Standard) basemap via a restricted API key.'
-              : 'Local demo basemap (no-auth OpenStreetMap raster). Set VITE_MAP_STYLE_URL (or VITE_MAP_API_KEY) to use Amazon Location Service Maps v2.'
+              : 'Local demo basemap (no-auth OpenStreetMap raster). Deploy the Amplify sandbox (Cognito guest identity pool) or set VITE_MAP_STYLE_URL to use Amazon Location Service Maps v2.'
           }
         >
           {isProductionMapStyle() ? 'Amazon Location Service' : 'Local demo basemap'}
