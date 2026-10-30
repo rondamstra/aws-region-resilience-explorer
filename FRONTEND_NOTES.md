@@ -25,24 +25,70 @@ React + TypeScript + Vite single-page app implementing the six MVP features per
    compliance; `src/components/ExplainerPanel.tsx` explains how to actually
    reason about DR Region choice.
 
-## Map style configuration — local demo vs Phase D (production)
+## Map style configuration — local demo vs production (Amazon Location Maps v2)
 
-Amazon Location Service requires deployed AWS credentials we do **not** have yet
-(deploy is gated, Phase D). So the map style is resolved behind a single config
-point, `src/config/mapStyle.ts`:
+The backend migrated from classic Location maps to **Amazon Location Service
+Maps v2** (the `geo-maps` service). v2 is a MANAGED service: the "Standard"
+MapLibre style is provider-managed (no per-account map resource), served from a
+v2 style-descriptor endpoint and authorised by a restricted API key passed as
+the `?key=` query param:
 
-- **LOCAL DEMO (default):** a free, **no-auth** OpenStreetMap raster style is
-  used inline — the map works with **zero AWS credentials**.
-- **PRODUCTION (Phase D):** set the env var `VITE_MAP_STYLE_URL` to the Amazon
-  Location Service style-descriptor URL (including the restricted API key),
-  e.g. `https://maps.geo.<region>.amazonaws.com/maps/v0/maps/<map>/style-descriptor?key=<apiKey>`.
-  `resolveMapStyle()` returns that URL when present; MapLibre accepts a style URL
-  or an inline style object, so **no component code changes**.
+```
+https://maps.geo.eu-west-1.amazonaws.com/v2/styles/Standard/descriptor?key=<apiKey>
+```
 
-**The Phase D swap is one line** — provide `VITE_MAP_STYLE_URL` at build time
-(or replace the fallback in `resolveMapStyle()` with the Location style URL).
-This aligns with ARCHITECTURE §4 (Amplify + CDK `CfnMap` + restricted
-`CfnAPIKey`) and §5 (referrer-locked, read-only `geo:GetMap*`, expiring key).
+MapLibre accepts that full style-descriptor URL (with `?key=`) directly as its
+`style`. The style is resolved behind a single config point,
+`src/config/mapStyle.ts`.
+
+### Resolution precedence (first match wins)
+
+`resolveMapStyle()` / `isProductionMapStyle()` pick the style in this order:
+
+1. **`VITE_MAP_STYLE_URL`** — a FULL v2 style-descriptor URL that already
+   includes `?key=<apiKey>`. Used verbatim.
+2. **`VITE_MAP_STYLE_DESCRIPTOR` + `VITE_MAP_API_KEY`** — the base descriptor URL
+   and the raw key, composed here into `${descriptor}?key=${apiKey}`.
+3. **`amplify_outputs.json`** `custom.mapStyleUrl` (base descriptor URL, emitted
+   by `amplify/backend.ts`) + a raw key from `VITE_MAP_API_KEY` (or
+   `custom.mapApiKey` if a deploy wires the raw value in — `CfnAPIKey` exposes
+   only name/ARN, so the raw key value is resolved at runtime; see ARCHITECTURE
+   §5). Composed into `${mapStyleUrl}?key=${key}`.
+4. **FALLBACK** — a free, **no-auth** OpenStreetMap raster style, inline, so the
+   app runs with **zero AWS configuration**.
+
+`amplify_outputs.json` is **gitignored** and only present after a deploy; it is
+imported optionally (via a Vite glob) so a missing file never breaks the build.
+
+### Running locally with a real v2 key (live tiles)
+
+To see the live Amazon Location Maps v2 Standard tiles locally, provide a real
+restricted key via a `.env.local` (gitignored) in the frontend worktree, then
+run the dev server / build. Either form works:
+
+```bash
+# Form A — full URL (simplest):
+VITE_MAP_STYLE_URL="https://maps.geo.eu-west-1.amazonaws.com/v2/styles/Standard/descriptor?key=REAL_KEY"
+
+# Form B — descriptor + key composed by the app:
+VITE_MAP_STYLE_DESCRIPTOR="https://maps.geo.eu-west-1.amazonaws.com/v2/styles/Standard/descriptor"
+VITE_MAP_API_KEY="REAL_KEY"
+```
+
+Get `REAL_KEY` from a deployed stack: it is the value of the
+`region-explorer-map-key` Amazon Location API key (`custom.mapApiKeyName` in
+`amplify_outputs.json`), fetched at runtime. With no key/URL set, the app falls
+back to OSM raster — no AWS needed.
+
+### The key ships to the browser — by design (ARCHITECTURE §5)
+
+The restricted Amazon Location Service API key is the **sole** public map-access
+mechanism, and embedding it in the browser-fetched style URL is the intended
+Amazon Location API-key model — **not a leaked secret**. The key is
+**referrer-locked** (bound to the Amplify Hosting domain), **read-only**
+(geo-maps exposes only `Get*` actions — no write/delete), **provider-scoped** to
+the single v2 provider ARN, and **expiring**. This aligns with ARCHITECTURE §4
+(Amplify + CDK `CfnAPIKey`, no `CfnMap` in v2) and §5.
 
 ## Test-facing modules (map-tester seam)
 
@@ -74,7 +120,8 @@ test seams: `region-marker-<code>` buttons, `primary-selected` /
 - Empty state (no Regions match filter), error state (dataset load failure with
   retry), and a fixture-fallback badge when the real dataset is absent.
 - Strict TypeScript, no `any` leaks. Static SPA — the only network calls are the
-  map style (local: OSM raster) and the static `regions.v1.json`.
+  map style (production: Amazon Location Maps v2 Standard descriptor + tiles;
+  local fallback: OSM raster) and the static `regions.v1.json`.
 
 ## Run locally (dev)
 
