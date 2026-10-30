@@ -99,3 +99,57 @@ describe('Amplify build spec — real YAML validation (regression)', () => {
     expect(doc.frontend?.artifacts?.baseDirectory).toBe('dist');
   });
 });
+
+/**
+ * Exact-bug reproduction (locks in detection of the CustomerError).
+ *
+ * The AWS Amplify failure was: "CustomerError: The commands provided in the
+ * buildspec are malformed." Root cause: a build command list item was an
+ * UNQUOTED scalar containing a colon-space (`ERROR: ...`). YAML flow/implicit
+ * typing then parses `key: value` INSIDE the list item as a MAPPING, so the
+ * item is an object, not the string Amplify expects.
+ *
+ * These tests reconstruct that exact malformed syntax, parse it with the real
+ * YAML parser, and prove it yields a NON-string. This demonstrates that the
+ * `typeof value === 'string'` assertion above would FAIL such a spec — i.e. the
+ * regression test genuinely catches the bug that shipped. (The ORIGINAL version
+ * of this test only ran `readFileSync` + `.toMatch(regex)` on the raw text and
+ * never parsed the YAML, so a command coerced to a mapping passed unnoticed.)
+ */
+describe('Amplify build spec — exact malformed-syntax reproduction (CustomerError lock-in)', () => {
+  // The precise shape of the command that broke the real build: unquoted, with
+  // an `ERROR: ` colon-space inside an echo. This mirrors the pre-fix amplify.yml.
+  const malformedCommandYaml = [
+    'commands:',
+    '  - test -f amplify_outputs.json || (echo "ERROR: amplify_outputs.json missing - backend deploy did not run before frontend build"; exit 1)',
+  ].join('\n');
+
+  it('the unquoted colon-space command parses to a NON-string (a mapping), not a string', () => {
+    const doc = parse(malformedCommandYaml) as { commands: unknown[] };
+    const item = doc.commands[0];
+    // This is the crux of the CustomerError: YAML saw `... (echo "ERROR": ...`
+    // and built an object instead of a string.
+    expect(typeof item).not.toBe('string');
+    expect(typeof item).toBe('object');
+    expect(item).not.toBeNull();
+  });
+
+  it('the string-type assertion used on amplify.yml would FAIL on the malformed command', () => {
+    const doc = parse(malformedCommandYaml) as { commands: unknown[] };
+    const item = doc.commands[0];
+    // Same predicate the real regression test applies to every command in
+    // amplify.yml. Proving it is false here proves the guard has teeth.
+    const passesStringGuard = typeof item === 'string';
+    expect(passesStringGuard).toBe(false);
+  });
+
+  it('a properly QUOTED equivalent command parses back to a string (the fix)', () => {
+    const fixedCommandYaml = [
+      'commands:',
+      // No colon-space in the message, and the whole item is a quoted scalar.
+      "  - \"test -f amplify_outputs.json || { echo 'ERROR amplify_outputs.json missing - backend deploy did not run'; exit 1; }\"",
+    ].join('\n');
+    const doc = parse(fixedCommandYaml) as { commands: unknown[] };
+    expect(typeof doc.commands[0]).toBe('string');
+  });
+});
