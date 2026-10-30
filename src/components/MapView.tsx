@@ -25,7 +25,8 @@ import maplibregl, {
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { FeatureCollection, LineString } from 'geojson';
 import type { Region } from '../data/types';
-import { resolveMapStyle } from '../config/mapStyle';
+import { resolveMapStyle, isCognitoMapStyle } from '../config/mapStyle';
+import { getMapAuthTransformRequest } from '../config/mapAuth';
 import { greatCircleArc } from '../data/greatCircle';
 
 export interface MapViewProps {
@@ -85,47 +86,79 @@ export default function MapView({
   onSelectRef.current = onSelect;
 
   // Initialise the MapLibre map once. Guarded so it is skipped in jsdom (no WebGL).
+  //
+  // When the Cognito SigV4 path is active (amplify_outputs.json wires a guest
+  // identity pool), we must resolve the auth-helper `transformRequest` FIRST —
+  // it exchanges anonymous Cognito guest credentials and SigV4-signs every
+  // style/tile/glyph/sprite request to *.amazonaws.com. That resolution is
+  // async, so map construction is deferred into an async closure with a
+  // cancellation guard. On the OSM fallback / API-key paths no transformRequest
+  // is needed and the map is built immediately.
   useEffect(() => {
     if (!nodeRef.current || mapRef.current) return;
-    let map: MLMap;
-    try {
-      map = new maplibregl.Map({
-        container: nodeRef.current,
-        style: resolveMapStyle() as string | StyleSpecification,
-        center: [0, 20],
-        zoom: 1.3,
-        attributionControl: { compact: true },
+    let cancelled = false;
+
+    const buildMap = (transformRequest?: maplibregl.RequestTransformFunction) => {
+      const container = nodeRef.current;
+      if (cancelled || !container || mapRef.current) return;
+      let map: MLMap;
+      try {
+        map = new maplibregl.Map({
+          container,
+          style: resolveMapStyle() as string | StyleSpecification,
+          center: [0, 20],
+          zoom: 1.3,
+          attributionControl: { compact: true },
+          // SigV4-sign ALS requests with Cognito guest creds (undefined = no-op).
+          ...(transformRequest ? { transformRequest } : {}),
+        });
+      } catch {
+        // No WebGL (e.g. jsdom / headless test): the DOM mirror below still works.
+        return;
+      }
+      map.addControl(new maplibregl.NavigationControl({ showZoom: true }), 'top-right');
+      map.on('load', () => {
+        readyRef.current = true;
+        map.addSource(LINE_SOURCE_ID, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        map.addLayer({
+          id: LINE_LAYER_ID,
+          type: 'line',
+          source: LINE_SOURCE_ID,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': '#d13438',
+            'line-width': 2.5,
+            'line-opacity': 0.9,
+            'line-dasharray': [2, 1],
+          },
+        });
+        syncLines();
+        syncMarkers();
       });
-    } catch {
-      // No WebGL (e.g. jsdom / headless test): the DOM mirror below still works.
-      return;
+      mapRef.current = map;
+    };
+
+    if (isCognitoMapStyle()) {
+      // Cognito SigV4: resolve the signing transformRequest, then build. If the
+      // credential exchange fails, build without it so the app still renders
+      // (unsigned requests simply fail to load tiles rather than crashing).
+      getMapAuthTransformRequest()
+        .then((tr) => buildMap(tr as maplibregl.RequestTransformFunction | undefined))
+        .catch(() => buildMap(undefined));
+    } else {
+      buildMap(undefined);
     }
-    map.addControl(new maplibregl.NavigationControl({ showZoom: true }), 'top-right');
-    map.on('load', () => {
-      readyRef.current = true;
-      map.addSource(LINE_SOURCE_ID, {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      });
-      map.addLayer({
-        id: LINE_LAYER_ID,
-        type: 'line',
-        source: LINE_SOURCE_ID,
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          'line-color': '#d13438',
-          'line-width': 2.5,
-          'line-opacity': 0.9,
-          'line-dasharray': [2, 1],
-        },
-      });
-      syncLines();
-      syncMarkers();
-    });
-    mapRef.current = map;
+
     return () => {
-      map.remove();
-      mapRef.current = null;
+      cancelled = true;
+      const map = mapRef.current;
+      if (map) {
+        map.remove();
+        mapRef.current = null;
+      }
       readyRef.current = false;
       markersRef.current.clear();
     };
