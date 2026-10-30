@@ -33,10 +33,13 @@ describe('Amplify platform contract — static SPA stays WEB', () => {
     const offending = hits
       .split('\n')
       .filter((l) => l.trim())
-      // Keep only lines that READ as an instruction to adopt WEB_COMPUTE.
-      .filter((l) =>
-        /(set|switch|use|platform).{0,20}WEB_COMPUTE/i.test(l) &&
-        !/do ?not|don't|NOT (switch|use|change|require)|expected|not WEB_COMPUTE|!=|==/i.test(l),
+      // strip the "path:lineno:" prefix so we judge only the content.
+      .map((l) => l.replace(/^[^:]+:\d+:/, '').trim())
+      // Keep only lines that READ as an imperative instruction to ADOPT WEB_COMPUTE.
+      .filter((content) =>
+        /\b(set|switch to|use|change .* to)\b[^\n]{0,30}WEB_COMPUTE/i.test(content) &&
+        // Exclude: negations, "expected", and bash equality tests (= / == / !=).
+        !/\bdo ?not\b|don't|\bNOT (switch|use|change|require)\b|expected|=\s*"?WEB_COMPUTE|WEB_COMPUTE"?\s*\]|!=/i.test(content),
       );
     expect(offending, `WEB_COMPUTE instruction found:\n${offending.join('\n')}`).toEqual([]);
   });
@@ -66,8 +69,9 @@ describe('Amplify platform contract — static SPA stays WEB', () => {
   });
 
   it('bootstrap documents running from a separate admin machine (no admin creds on KC VM)', () => {
-    // Normalize whitespace (the guidance spans multiple comment lines).
-    const flat = script.replace(/\s+/g, ' ').toLowerCase();
+    // Normalize whitespace AND strip comment markers (# at line starts), since
+    // the guidance spans multiple comment lines.
+    const flat = script.replace(/#/g, ' ').replace(/\s+/g, ' ').toLowerCase();
     expect(flat).toMatch(/separate,? trusted admin machine/);
     expect(flat).toMatch(/administrator credentials must never be stored/);
     expect(flat).toMatch(/kiro crew vm/);
