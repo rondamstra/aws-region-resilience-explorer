@@ -1,0 +1,22 @@
+{
+  "_comment": "PROPOSAL ONLY — do NOT install this as a competing root package.json. The lead MERGES these devDependencies and scripts into the frontend's ROOT package.json (map-frontend owns the app root). Versions are current-stable suggestions; pin to the lockfile at install time.",
+  "devDependencies": {
+    "vitest": "^2.1.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "jsdom": "^25.0.0",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/jest-dom": "^6.5.0",
+    "@testing-library/user-event": "^14.5.0",
+    "ajv": "^8.17.0",
+    "ajv-formats": "^3.0.1"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:contract": "vitest run tests/contract",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format:check": "prettier --check ."
+  }
+}
