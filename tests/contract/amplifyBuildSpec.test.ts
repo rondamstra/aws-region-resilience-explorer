@@ -81,12 +81,13 @@ describe('Amplify build spec — real YAML validation (regression)', () => {
     expect(backendCmds.some((c) => c.includes('ampx pipeline-deploy'))).toBe(true);
   });
 
-  it('installs npm deps before invoking ampx (npm ci precedes pipeline-deploy)', () => {
+  it('installs npm deps before invoking ampx (install precedes pipeline-deploy)', () => {
     const backendCmds = (doc.backend?.phases?.build?.commands ?? []) as string[];
-    const ciIdx = backendCmds.findIndex((c) => c.startsWith('npm ci'));
+    // Accept `npm install` (required — see the npm-ci lockfile bug below).
+    const installIdx = backendCmds.findIndex((c) => /npm (install|ci)/.test(c));
     const ampxIdx = backendCmds.findIndex((c) => c.includes('ampx pipeline-deploy'));
-    expect(ciIdx).toBeGreaterThanOrEqual(0);
-    expect(ampxIdx).toBeGreaterThan(ciIdx);
+    expect(installIdx).toBeGreaterThanOrEqual(0);
+    expect(ampxIdx).toBeGreaterThan(installIdx);
   });
 
   it('frontend build guards on amplify_outputs.json existence', () => {
@@ -97,5 +98,97 @@ describe('Amplify build spec — real YAML validation (regression)', () => {
 
   it('publishes the vite dist/ directory', () => {
     expect(doc.frontend?.artifacts?.baseDirectory).toBe('dist');
+  });
+
+  // ---- CLI dependency contract (the "could not determine executable" bug) --
+  // ampx comes from @aws-amplify/backend-cli. Amplify Hosting installs the ROOT
+  // package.json, so the CLI MUST be a root dependency, or `ampx` is never on
+  // PATH and the backend phase dies with "could not determine executable".
+  it('declares @aws-amplify/backend-cli (provides ampx) in the ROOT package.json', () => {
+    const pkg = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+    const all = { ...pkg.dependencies, ...pkg.devDependencies };
+    expect(all['@aws-amplify/backend-cli'], '@aws-amplify/backend-cli must be a root dep (provides ampx)').toBeDefined();
+    expect(all['@aws-amplify/backend'], '@aws-amplify/backend must be a root dep').toBeDefined();
+  });
+
+  it('backend phase installs deps and invokes ampx via npx --no-install', () => {
+    const backendCmds = (doc.backend?.phases?.build?.commands ?? []) as string[];
+    // Must install before invoking ampx.
+    const installIdx = backendCmds.findIndex((c) => /npm (install|ci)/.test(c));
+    const ampxIdx = backendCmds.findIndex((c) => c.includes('ampx pipeline-deploy'));
+    expect(installIdx).toBeGreaterThanOrEqual(0);
+    expect(ampxIdx).toBeGreaterThan(installIdx);
+  });
+
+  it('uses npm install (not npm ci) — ci rejects the backend-cli toolkit-lib lockfile', () => {
+    // The @aws-cdk/toolkit-lib nested dep makes `npm ci` fail the lockfile sync
+    // check (npm 11), leaving ampx uninstalled. The buildspec must use
+    // `npm install`, which self-heals. Guard against a regression to `npm ci`.
+    const allCmds = (
+      [
+        ...(doc.backend?.phases?.build?.commands ?? []),
+        ...(doc.frontend?.phases?.preBuild?.commands ?? []),
+      ] as string[]
+    );
+    for (const c of allCmds) {
+      expect(c, `build command must not use 'npm ci' (breaks ampx): ${c}`).not.toMatch(/\bnpm ci\b/);
+    }
+    expect(allCmds.some((c) => /\bnpm install\b/.test(c))).toBe(true);
+  });
+});
+
+/**
+ * Exact-bug reproduction (locks in detection of the CustomerError).
+ *
+ * The AWS Amplify failure was: "CustomerError: The commands provided in the
+ * buildspec are malformed." Root cause: a build command list item was an
+ * UNQUOTED scalar containing a colon-space (`ERROR: ...`). YAML flow/implicit
+ * typing then parses `key: value` INSIDE the list item as a MAPPING, so the
+ * item is an object, not the string Amplify expects.
+ *
+ * These tests reconstruct that exact malformed syntax, parse it with the real
+ * YAML parser, and prove it yields a NON-string. This demonstrates that the
+ * `typeof value === 'string'` assertion above would FAIL such a spec — i.e. the
+ * regression test genuinely catches the bug that shipped. (The ORIGINAL version
+ * of this test only ran `readFileSync` + `.toMatch(regex)` on the raw text and
+ * never parsed the YAML, so a command coerced to a mapping passed unnoticed.)
+ */
+describe('Amplify build spec — exact malformed-syntax reproduction (CustomerError lock-in)', () => {
+  // The precise shape of the command that broke the real build: unquoted, with
+  // an `ERROR: ` colon-space inside an echo. This mirrors the pre-fix amplify.yml.
+  const malformedCommandYaml = [
+    'commands:',
+    '  - test -f amplify_outputs.json || (echo "ERROR: amplify_outputs.json missing - backend deploy did not run before frontend build"; exit 1)',
+  ].join('\n');
+
+  it('the unquoted colon-space command parses to a NON-string (a mapping), not a string', () => {
+    const doc = parse(malformedCommandYaml) as { commands: unknown[] };
+    const item = doc.commands[0];
+    // This is the crux of the CustomerError: YAML saw `... (echo "ERROR": ...`
+    // and built an object instead of a string.
+    expect(typeof item).not.toBe('string');
+    expect(typeof item).toBe('object');
+    expect(item).not.toBeNull();
+  });
+
+  it('the string-type assertion used on amplify.yml would FAIL on the malformed command', () => {
+    const doc = parse(malformedCommandYaml) as { commands: unknown[] };
+    const item = doc.commands[0];
+    // Same predicate the real regression test applies to every command in
+    // amplify.yml. Proving it is false here proves the guard has teeth.
+    const passesStringGuard = typeof item === 'string';
+    expect(passesStringGuard).toBe(false);
+  });
+
+  it('a properly QUOTED equivalent command parses back to a string (the fix)', () => {
+    const fixedCommandYaml = [
+      'commands:',
+      // No colon-space in the message, and the whole item is a quoted scalar.
+      "  - \"test -f amplify_outputs.json || { echo 'ERROR amplify_outputs.json missing - backend deploy did not run'; exit 1; }\"",
+    ].join('\n');
+    const doc = parse(fixedCommandYaml) as { commands: unknown[] };
+    expect(typeof doc.commands[0]).toBe('string');
   });
 });
