@@ -1,27 +1,23 @@
 import { defineBackend } from '@aws-amplify/backend';
 import { CfnMap, CfnAPIKey } from 'aws-cdk-lib/aws-location';
-import { auth } from './auth/resource';
 
 /**
  * AWS Region Resilience Explorer — Amplify Gen 2 backend.
  *
  * Per ARCHITECTURE.md §4/§5, map access uses a RESTRICTED Amazon Location
- * Service API key as the PRIMARY mechanism (read-only, referrer-locked,
- * expiring, scoped to the single map ARN). The unauthenticated Cognito
- * identity pool (`./auth/resource`) is wired as the DOCUMENTED SECURE
- * ALTERNATIVE only; it is not required for the API-key path.
+ * Service API key as the SOLE public-access mechanism (read-only, referrer-
+ * locked, expiring, scoped to the single map ARN). The product has NO login,
+ * so NO Cognito identity pool is wired — the frontend reads VITE_MAP_STYLE_URL
+ * with the API key and never exchanges Cognito credentials.
  *
  * STRUCTURE ONLY: this file defines resources. Nothing here deploys. No
- * `ampx` / `amplify sandbox` has been run, and no AWS credentials are
- * configured in this scaffold.
+ * `ampx` / `amplify sandbox` has been run as part of authoring this file.
  */
-const backend = defineBackend({
-  // Alternative path: unauth identity pool (see ARCHITECTURE.md §5).
-  auth,
-});
+const backend = defineBackend({});
 
-// Amplify Gen 2 has no first-class Location map primitive, so we reach the
-// underlying CDK stack and add the resource as a CDK construct (§4).
+// Amplify Gen 2 has no first-class Location map primitive, so we reach a
+// backend CDK stack and add the resources as CDK constructs (§4). This stack
+// is the only resource the backend carries.
 const geoStack = backend.createStack('geo');
 
 // Amazon Location Service vector basemap. Style is provisional (OQ3).
@@ -35,12 +31,13 @@ const map = new CfnMap(geoStack, 'RegionExplorerMap', {
 });
 
 // Restricted, read-only, referrer-locked, EXPIRING API key scoped to THIS map
-// only. This is the primary public-access mechanism (ARCHITECTURE.md §5).
+// only. This is the SOLE public-access mechanism (ARCHITECTURE.md §5).
 const mapKey = new CfnAPIKey(geoStack, 'RegionExplorerMapKey', {
   keyName: 'region-explorer-map-key',
   noExpiry: false,
-  // Rotate-by-expiry; set/rotate per deploy. Placeholder far-future value.
-  expireTime: '2026-12-31T00:00:00Z',
+  // Rotate-by-expiry; ~90 days out from 2026-10-30. Rotate by redeploying with
+  // a new expireTime (see ARCHITECTURE.md §5 rotation procedure).
+  expireTime: '2027-01-28T00:00:00Z',
   restrictions: {
     // Read-only map tile/style access; NO geo:Put*/Delete*, no Places/Routes.
     allowActions: [
@@ -51,7 +48,8 @@ const mapKey = new CfnAPIKey(geoStack, 'RegionExplorerMapKey', {
     ],
     // Scoped to THIS map ARN only — least privilege.
     allowResources: [map.attrArn],
-    // Referrer-locked to the Amplify Hosting domain(s).
+    // Referrer-locked to the Amplify Hosting domain(s); narrow to the real
+    // domain post-deploy.
     allowReferers: ['https://*.amplifyapp.com'],
   },
 });
@@ -75,8 +73,8 @@ backend.addOutput({
     mapRegion: geoStack.region,
     // CfnAPIKey does not return the raw key STRING as a CloudFormation
     // attribute. The client resolves the key value at runtime from the key
-    // NAME via the Location API / generated config (see §5 trade-off: the key
-    // string ships to the client). We surface the key name + ARN here.
+    // NAME via the generated config (see §5 trade-off: the key string ships to
+    // the client). We surface the key name + ARN here.
     mapApiKeyName: 'region-explorer-map-key',
     mapApiKeyArn: mapKey.attrKeyArn,
   },

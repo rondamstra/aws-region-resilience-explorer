@@ -6,6 +6,13 @@
 **Author (owner):** map-architect
 **Status:** DRAFT — awaiting lead review (gate before implementation)
 
+> **Map-auth decision (FINAL):** The restricted Amazon Location Service API key
+> is the **sole** public map-access mechanism. The unauthenticated Cognito
+> identity pool has been **removed** from the backend (`amplify/auth/resource.ts`
+> deleted; `defineBackend` no longer wires `auth`). The frontend reads the map
+> style URL + API key from the generated config and never exchanges Cognito
+> credentials. See §5.
+
 ---
 
 ## 1. Product summary
@@ -56,12 +63,12 @@ human approval** (see §7).
 | **Amplify Gen 2** | TypeScript-first backend definition (`amplify/backend.ts`), per-branch cloud sandboxes, native GitHub CI/CD, and an escape hatch to raw CDK for resources Amplify has no first-class construct for (Location maps). Lowest-ceremony path from repo → deployed app. | Hand-rolled CDK app + separate hosting (S3/CloudFront) is more wiring and no CI/CD out of the box. SAM is Lambda-centric; we are static. |
 | **Amplify Hosting** | Git-push-to-deploy, PR preview builds, managed TLS + CDN, atomic rollbacks. Free tier covers hackathon traffic. | Self-managed S3 + CloudFront needs manual invalidations and cert setup. |
 | **Amazon Location Service (Maps)** | The judging criterion explicitly rewards use of Location Service. Vector basemaps, MapLibre GL JS rendering, usage-based pricing with a free tier. We draw our own Region markers + great-circle lines as GeoJSON layers on top. | Mapbox/Google would score worse against the "use of Amazon Location Service" criterion and add third-party billing. |
-| **Amazon Location Service restricted API key** (chosen) | Simplest moving parts for a public, read-only, login-less map: a referrer/origin-restricted, read-only, expiring key bound to the single map ARN. No identity-pool wiring, no client credential exchange. | See §5 — the unauth Cognito identity pool is more secure via IAM but adds wiring that is unnecessary when there is no login. |
+| **Amazon Location Service restricted API key** (**sole mechanism**) | Simplest moving parts for a public, read-only, login-less map: a referrer/origin-restricted, read-only, expiring key bound to the single map ARN. No identity-pool wiring, no client credential exchange. | An unauth Cognito identity pool was evaluated and **removed** (see §5): it is more secure via IAM in the abstract but is unnecessary wiring when there is no login, and the frontend never used it. |
 | **AWS CDK (via Amplify)** | Amplify Gen 2 has no first-class `defineMap`, so we add the `CfnMap` (+ `CfnAPIKey`) as CDK constructs inside the Amplify backend. One deploy, one IAM surface. | A separately-deployed CDK stack would split state and complicate cross-stack references. |
 | **Static versioned JSON** | Region data changes rarely (new Region launches). Shipping it as a build-time asset = zero backend compute, zero query latency, trivially cacheable, diffable in git. | DynamoDB/API Gateway/Lambda would add cost, cold starts, and operational surface for data that is effectively a constant. |
 
 **Net:** one Amplify app, one map resource, one restricted API key, one static
-JSON asset. No databases, no APIs, no servers to patch.
+JSON asset. No identity pool, no databases, no APIs, no servers to patch.
 
 ---
 
@@ -76,35 +83,43 @@ Flow:
 
 1. In `amplify/backend.ts`, create a backend CDK stack and add an `aws-location`
    **`CfnMap`** construct (a vector style such as a standard street/light basemap).
-2. Add a **`CfnAPIKey`** construct (or documented equivalent) that is
-   **restricted** to that single map's ARN, **read-only** (`geo:GetMap*`),
-   **referrer/origin-restricted** to the Amplify Hosting domain(s), and carries an
-   **expiry** (see §5).
-3. No identity pool and no login: because the product has no authenticated users,
-   `defineAuth` / an unauth role is **not** wired for map access.
-4. Surface the map name, Region, and the API key value as **build-time outputs**
-   so the React app can read them (via `amplify_outputs.json` / a generated
-   config), rather than hard-coding.
+2. Add a **`CfnAPIKey`** construct that is **restricted** to that single map's
+   ARN, **read-only** (`geo:GetMap*`), **referrer/origin-restricted** to the
+   Amplify Hosting domain(s), and carries an **expiry** (see §5).
+3. **No identity pool and no login.** Because the product has no authenticated
+   users and the API key is the sole mechanism, `defineAuth` / an unauth role is
+   **not** wired at all. `amplify/auth/resource.ts` has been **deleted** and
+   `defineBackend` is called with no `auth` resource.
+4. Surface the map name, Region, and the API key **name + ARN** as **build-time
+   outputs** so the React app can read them (via `amplify_outputs.json` / a
+   generated config), rather than hard-coding. (`CfnAPIKey` does not expose the
+   raw key string as a CloudFormation attribute; the client resolves the key
+   value at runtime from the generated config — see §5.)
+
+Because the backend carries no `defineAuth`/`defineData` resource, `defineBackend`
+is called with an **empty resource map** and the `geo` stack is created on the
+returned backend; that stack (the `CfnMap` + `CfnAPIKey`) is the only resource
+the backend deploys.
 
 ```ts
-// amplify/backend.ts (illustrative — not final code; implementation phase owns this)
+// amplify/backend.ts (final shape — API-key-only, no Cognito)
 import { defineBackend } from '@aws-amplify/backend';
 import { CfnMap, CfnAPIKey } from 'aws-cdk-lib/aws-location';
 
-const backend = defineBackend({});
+const backend = defineBackend({}); // no auth/data — API key is the sole mechanism
 
 const geoStack = backend.createStack('geo');
 const map = new CfnMap(geoStack, 'RegionExplorerMap', {
   mapName: 'region-explorer-map',
-  configuration: { style: 'VectorEsriNavigation' }, // basemap style TBD
-  pricingPlan: undefined, // request-based pricing (default)
+  configuration: { style: 'VectorEsriNavigation' }, // basemap style TBD (OQ3)
+  description: 'Basemap for AWS Region Resilience Explorer (vector).',
 });
 
-// Restricted, read-only, referrer-locked, expiring API key scoped to THIS map only.
+// Restricted, read-only, referrer-locked, EXPIRING API key scoped to THIS map only.
 const mapKey = new CfnAPIKey(geoStack, 'RegionExplorerMapKey', {
   keyName: 'region-explorer-map-key',
   noExpiry: false,
-  expireTime: '2026-12-31T00:00:00Z', // rotate-by-expiry; set per deploy
+  expireTime: '2027-01-28T00:00:00Z', // ~90 days out; rotate by redeploy (see §5)
   restrictions: {
     allowActions: [
       'geo:GetMapTile',
@@ -118,15 +133,33 @@ const mapKey = new CfnAPIKey(geoStack, 'RegionExplorerMapKey', {
 });
 
 backend.addOutput({
-  custom: { mapName: map.mapName, region: geoStack.region, mapApiKey: mapKey.attrKey },
+  geo: {
+    aws_region: geoStack.region,
+    maps: { items: { [map.mapName]: { style: 'VectorEsriNavigation' } }, default: map.mapName },
+  },
+  custom: {
+    mapName: map.mapName,
+    mapRegion: geoStack.region,
+    mapApiKeyName: 'region-explorer-map-key', // raw key resolved client-side from config
+    mapApiKeyArn: mapKey.attrKeyArn,
+  },
 });
 ```
 
-The React app uses MapLibre GL JS. It reads the **restricted API key** from the
-generated config and uses it to fetch Location map tiles directly — no credential
-exchange, no identity pool. Our own data (Region markers, selected primary,
-DR-candidate lines) is drawn as GeoJSON layers on top of the basemap and is
-**fully client-side** from the static JSON asset.
+The React app uses MapLibre GL JS. It reads the **restricted API key** (via
+`VITE_MAP_STYLE_URL` + the generated config) and uses it to fetch Location map
+tiles directly — no credential exchange, no identity pool. Our own data (Region
+markers, selected primary, DR-candidate lines) is drawn as GeoJSON layers on top
+of the basemap and is **fully client-side** from the static JSON asset.
+
+**Backend dependency versions (tested to synthesize).** `amplify/package.json`
+pins `@aws-amplify/backend ^1.25.1`, `@aws-amplify/backend-cli ^1.4.2`,
+`aws-cdk-lib ^2.275.0`, `constructs ^10.6.0`. The earlier pins
+(`@aws-amplify/backend 1.8.0` + `aws-cdk-lib 2.164.1`) **failed to synthesize**:
+`backend-function` requires **cdk >= 2.257** for the `aws-cdk-lib/aws-scheduler-targets`
+subpath export, which 2.164.1 does not provide. The bump is the minimum needed to
+get a clean synth; `CfnMap` and `CfnAPIKey` (with `restrictions`/`expireTime`)
+are present and typed in 2.275.0.
 
 ### Component diagram
 
@@ -158,47 +191,70 @@ Service using the restricted API key.
 ## 5. Public map access & security
 
 The map is **public** (anyone can load the site and see the basemap) and the
-product has **no login**. Two ways to let an anonymous browser read a Location
-map:
+product has **no login**.
 
-| Option | Pros | Cons |
-|---|---|---|
-| **Restricted Location Service API key** (chosen) | Simplest moving parts: one key bound to the single map ARN, read-only `geo:GetMap*`, referrer/origin-restricted to the Amplify Hosting domain, with an expiry. No identity pool, no credential exchange, no login plumbing. | Key string ships in the client bundle; rotation is by expiry/re-issue rather than automatic. |
-| **Unauth Cognito identity pool** (documented secure alternative) | More secure in the abstract: short-lived, auto-rotating credentials via IAM, no key string in the bundle. | More moving parts (identity pool + unauth role + credential exchange in the client) — unnecessary wiring when there is no login. |
-
-**Decision: use a restricted Amazon Location Service API key as the primary
-mechanism.** Reasoning:
+**Decision (FINAL): a restricted Amazon Location Service API key is the SOLE
+public map-access mechanism.** An unauthenticated Cognito identity pool was
+evaluated as a more-secure-in-the-abstract alternative and **removed** from the
+backend. Reasoning:
 
 1. The product has **no authenticated users**, so an identity pool exists only to
    mint anonymous credentials — ceremony with no login to serve.
-2. The API key is the **simplest set of moving parts**: one resource, no
-   client-side credential exchange, read straight from config by MapLibre.
-3. It is still **least-privilege** — scoped to the single map ARN, read-only
+2. The frontend **never used Cognito**: it loads the basemap from
+   `VITE_MAP_STYLE_URL` with the API key and does no client-side credential
+   exchange (confirmed).
+3. The API key is the **simplest set of moving parts**: one resource, read
+   straight from the generated config by MapLibre.
+4. It is still **least-privilege** — scoped to the single map ARN, read-only
    `geo:GetMap*`, and **referrer-locked** to the Amplify Hosting domain.
-4. It is **rotatable by expiry**: the key carries an expiry and is re-issued on
-   rotation, with no long-lived write credential anywhere.
+5. It is **rotatable by expiry**: the key carries an `expireTime` and is re-issued
+   on rotation, with no long-lived write credential anywhere.
 
-The unauthenticated Cognito identity pool remains the **documented secure
-alternative**: it is more secure via IAM-enforced, auto-rotating credentials and
-is the right choice if the product ever adds login, but it is more wiring than a
-login-less public map needs today.
+The unauth Cognito identity pool is therefore **not wired**. `amplify/auth/resource.ts`
+has been deleted and `defineBackend` is called with no `auth` resource. If the
+product ever adds login, an identity pool can be re-introduced then; it is not
+carried as dormant wiring now.
 
-Security restrictions (apply to the chosen API key, and to the alternative):
+### API-key usage & security model
 
-- **Scope to the map only.** The key's `allowResources` is the single map ARN and
-  `allowActions` lists only `geo:GetMapTile`, `geo:GetMapStyleDescriptor`,
-  `geo:GetMapSprites`, `geo:GetMapGlyphs`. No wildcard `geo:*`, no `Resource: *`.
-- **Read-only.** No `geo:Put*`, `geo:Delete*`, no Places/Routes/Trackers
-  permissions. This map build does not use Places/Routes/Geofencing.
-- **Referrer/origin restriction.** The key's `allowReferers` binds it to the
-  Amplify Hosting domain(s). (The identity-pool alternative is bound by IAM
-  instead of referrer.)
-- **Expiry.** The key carries an explicit `expireTime`; rotation is re-issue on
-  expiry, not a standing long-lived secret.
-- **No write perms anywhere** beyond the map reads above.
-- **No user auth / no PII.** No login, no cookies, no stored user data, so no
-  auth attack surface and nothing to leak.
-- **Least-privilege deploy role** for the Amplify/CDK deployment (see §7).
+The key is created by the `CfnAPIKey` construct in `amplify/backend.ts`
+(`region-explorer-map-key`) with these restrictions:
+
+- **(a) Referrer restriction.** `allowReferers = ['https://*.amplifyapp.com']`
+  binds the key to the Amplify Hosting domain(s). The wildcard is a **pre-deploy
+  placeholder**: once the production Amplify domain (and any custom domain) is
+  known, **narrow `allowReferers` to the real domain(s)** and redeploy. A key
+  used from any other origin is rejected by Location Service.
+- **(b) Read-only, single-map scope.** `allowActions` lists only the four
+  read-only map actions — `geo:GetMapTile`, `geo:GetMapStyleDescriptor`,
+  `geo:GetMapSprites`, `geo:GetMapGlyphs` — and `allowResources = [map.attrArn]`
+  scopes the key to **this one map's ARN**. No wildcard `geo:*`, no `Resource: *`,
+  no `geo:Put*`/`geo:Delete*`, and no Places/Routes/Trackers/Geofencing
+  permissions (this build uses none of those).
+- **(c) Expiry & rotation.** `noExpiry = false` with a concrete
+  `expireTime = '2027-01-28T00:00:00Z'` (~90 days out from 2026-10-30, a sensible
+  sandbox lifetime). **Rotation procedure:** the key is rotated by **redeploying
+  the backend with a new `expireTime`** (and, if a key value needs to be
+  invalidated immediately, by changing `keyName` so a fresh key is issued). The
+  client always reads the **current** key from the generated config
+  (`amplify_outputs.json` → `VITE_MAP_STYLE_URL` / the `custom` outputs), so a
+  rotation requires no code change — redeploy, and the new config carries the new
+  key. There is no standing long-lived secret; the key self-expires if rotation
+  lapses.
+- **(d) The key string ships to the browser — and why that is acceptable.** A
+  Location API key is designed to be embedded in client code; the raw string
+  reaches the browser in the generated config. This is acceptable **because the
+  restrictions above make a leaked key low-value**: it is read-only, usable only
+  against this single map ARN, and only from the locked referrer domain, and it
+  expires. The worst case of a leaked, off-domain-reused key is unauthorized
+  map-tile reads on our own map (metered usage) — not data exposure, not writes,
+  not access to any other resource. There is **no login, no cookies, no PII, no
+  stored user data**, so there is no auth attack surface and nothing to leak
+  beyond the restricted tile-read capability itself.
+
+Deployment-side: a **least-privilege deploy role** is used for the Amplify/CDK
+deployment (see §7); the deploy principal needs `geo:CreateKey` (plus `geo:CreateMap`
+and the key/map describe/update/delete actions) to provision these resources.
 
 ---
 
@@ -243,11 +299,15 @@ datasets without verifying their license permits redistribution.**
 - **Amplify Hosting + GitHub CI/CD.** Connect the GitHub repo; `master` is the
   production branch, feature branches get PR preview builds.
 - **One backend deploy** per environment (Amplify sandbox for dev, Amplify
-  pipeline for `master`). The CDK `CfnMap` + identity-pool policy deploy as part
-  of the Amplify backend.
+  pipeline for `master`). The CDK `CfnMap` + restricted `CfnAPIKey` deploy as
+  part of the Amplify backend. No Cognito identity pool is deployed.
 - **Least-privilege deploy.** The CI/CD deploy role is scoped to the app's
-  CloudFormation stacks + the specific services used (Amplify, Location,
-  Cognito, IAM for the two roles). No broad admin.
+  CloudFormation stacks + the specific services used (Amplify, Location, and the
+  IAM/CDK-bootstrap roles the deploy needs). The Location permissions must
+  include **`geo:CreateKey`** (a prior deploy failed only because the principal
+  lacked it) alongside `geo:CreateMap` and the describe/update/delete actions for
+  the map and key. No Cognito permissions are needed now that the identity pool
+  is removed. No broad admin.
 - **No deploy without explicit human approval.** The lead gates the first
   production deploy. Mates do not deploy to AWS.
 
@@ -348,7 +408,7 @@ gate.
 | # | Question | Owner | Blocking gate? |
 |---|---|---|---|
 | OQ1 | Confirm the official judging rubric and weights (we assumed 4 equal criteria). | lead | No, but affects polish priorities |
-| OQ2 | Map access mechanism. **RESOLVED:** primary is a restricted Location Service API key (read-only, referrer-locked to the Amplify domain, expiring, scoped to the single map ARN); the unauth Cognito identity pool is the documented secure alternative (see §5). | map-frontend | No |
+| OQ2 | Map access mechanism. **RESOLVED (FINAL):** a restricted Location Service API key is the **sole** mechanism (read-only `geo:GetMap*`, referrer-locked to the Amplify domain, expiring ~90 days, scoped to the single map ARN). The unauth Cognito identity pool was evaluated and **removed** from the backend — the frontend never used it (see §5). | map-frontend | No |
 | OQ3 | Which basemap style (navigation/light/standard) best shows global separation? | map-frontend / map-architect | No |
 | OQ4 | Upstream source + license for Region metadata and coordinates. **RESOLVED:** metadata from AWS Global Infrastructure docs + SSM public parameters (`/aws/service/global-infrastructure/...`); coordinates are approximate city centroids from a documented, redistribution-cleared source; no third-party dataset copied without checking licensing; every record documents coordinate provenance and never claims datacenter locations (see §6). | map-data | **Yes — RESOLVED** |
 | OQ5 | Region scope. **RESOLVED:** dataset = all operational commercial AWS Regions in the standard `aws` partition. GovCloud, China, announced-but-not-operational Regions, Local Zones, Wavelength Zones and Outposts are **out of scope**. | lead | **Yes — RESOLVED** |
@@ -363,7 +423,7 @@ gate.
 | R1 | Users read approximate centroids as datacenter locations. | Misleading DR decisions | Med | Persistent "approximate centroid" caveat + provenance in UI. |
 | R2 | Users conflate distance with resilience/latency/compliance. | Wrong real-world advice | High | §9 disclaimer as a first-class feature; explainer panel. |
 | R3 | Coordinate/metadata provenance or license unclear. | Legal/accuracy gap | Med | OQ4/OQ5 **resolved** (§6, §11); redistribution-cleared centroid source + per-record provenance block. |
-| R4 | API key leaks or is reused off-domain. | Unauthorized tile usage on our map | Low | Referrer-locked, read-only, single-map scope, expiry; rotate by re-issue. Identity pool is the documented more-secure alternative (§5) if login is ever added. |
+| R4 | API key leaks or is reused off-domain. | Unauthorized tile usage on our map | Low | Referrer-locked, read-only, single-map scope, expiry; rotate by redeploy with a new `expireTime` (§5). A leaked key is low-value: read-only, single-map, domain-locked, expiring. An identity pool could be re-introduced if login is ever added. |
 | R5 | Location Service / Amplify free-tier limits hit during judging traffic. | Cost or throttling | Low | $0/month is a target, not a guarantee (§7); request-based pricing, caching, demo-scale traffic; monitor. |
 | R6 | Parallel mates diverge from the data contract. | Integration breakage | Med | Contract is the frozen seam; CI validates `regions.vN.json` against schema. |
 | R7 | Scope creep (Places/Routes/auth/AZ detail). | Misses deadline | Med | Stack guardrails: static + serverless only; gate before implementation. |
