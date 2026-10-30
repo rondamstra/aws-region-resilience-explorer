@@ -246,7 +246,7 @@ Forgejo PR, never by this script.
 | Fetch first; reject divergence | Fetches the branch, then requires the remote SHA to be an **ancestor** of local (fast-forwardable). Divergent remote → STOP. |
 | No push with uncommitted changes | `git diff`/`status --porcelain` clean check → STOP if dirty. |
 | No push on failed verification | Runs validator + typecheck + build + Vitest; any failure → STOP. |
-| SSH key stays on host | Uses `ssh -F ~/.ssh/config` (host key `~/.ssh/<FORGEJO_SSH_KEY>`). The key is never read, printed, copied, or exposed to a Mate. |
+| SSH key stays on host | Uses `ssh -F ~/.ssh/config` (host key `<HOME>/.ssh/<FORGEJO_SSH_KEY>`). The key is never read, printed, copied, or exposed to a Mate. |
 | Every attempt recorded | Appends timestamped lines to `.forgejo-sync.log` (gitignored). |
 
 ### Known limitation — main checkout vs worktrees

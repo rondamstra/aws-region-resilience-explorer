@@ -6,7 +6,7 @@ import { auth } from './auth/resource';
  * AWS Region Resilience Explorer — Amplify Gen 2 backend.
  *
  * MIGRATION (classic → Amazon Location Service Maps v2 / geo-maps):
- * The account (DEV/TEST <AWS_TEST_ACCOUNT_ID>, eu-west-1) carries an explicit DENY on
+ * The DEV/TEST account (eu-west-1) carries an explicit DENY on
  * the classic v0 tile path, so the classic AWS::Location::Map + geo:GetMap*
  * key, while it deployed, could not serve tiles. We migrated to Amazon Location
  * Service Maps v2 (the `geo-maps` service). v2 is a MANAGED service: the

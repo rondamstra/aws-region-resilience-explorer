@@ -9,7 +9,7 @@
 # with a dirty tree, failing tests, or divergent remote state.
 #
 # SECURITY:
-#   - Runs ON THE HOST, using the host's existing SSH key (~/.ssh/<FORGEJO_SSH_KEY>).
+#   - Runs ON THE HOST, using the host's existing SSH key (the host SSH key (see ~/.ssh/config)).
 #   - The key is NEVER read, copied, printed, or exposed to a Mate workspace.
 #   - No Kiro Crew internals are modified; this is a plain host script + git.
 #
@@ -39,8 +39,10 @@ DENIED_BRANCHES_REGEX='^(test|production)$'
 # so a routine master sync never drags a half-done feature branch to the remote.
 LOG_FILE="${FORGEJO_SYNC_LOG:-$REPO_DIR/.forgejo-sync.log}"
 # Pin SSH to the user config so a broken system ssh_config.d include cannot
-# abort parsing (the documented root cause). The key stays on the host.
-SSH_CMD="ssh -F <HOME>/.ssh/config -o BatchMode=yes -o ConnectTimeout=10"
+# abort parsing (the documented root cause). The key stays on the host. Uses
+# $HOME so no username is hardcoded; override via FORGEJO_SSH_CONFIG if needed.
+SSH_CONFIG="${FORGEJO_SSH_CONFIG:-$HOME/.ssh/config}"
+SSH_CMD="ssh -F $SSH_CONFIG -o BatchMode=yes -o ConnectTimeout=10"
 
 MODE="dry-run"
 RUN_TESTS=1
