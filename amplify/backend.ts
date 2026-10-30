@@ -45,6 +45,11 @@ const mapStyleUrl =
 // geo-maps provider ONLY. This is the SOLE public-access mechanism (§5).
 const mapKey = new CfnAPIKey(geoStack, 'RegionExplorerMapKey', {
   keyName: 'region-explorer-map-key',
+  // Confirm restriction changes on an already-used key (classic → v2 migration).
+  // Location refuses to silently alter a key used in the last 7 days without
+  // this flag, since changing restrictions can revoke access for live callers.
+  // In this sandbox the key was only exercised by our own validation fetches.
+  forceUpdate: true,
   noExpiry: false,
   // Rotate-by-expiry. Rotate by redeploying with a new expireTime (see
   // ARCHITECTURE.md §5 rotation procedure).
