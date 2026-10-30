@@ -67,7 +67,13 @@ sys.exit(0 if '@aws-amplify/backend-cli' in alld and '@aws-amplify/backend' in a
 PY
 
 # 4. No real AWS account id / profile / private host in tracked files (placeholders only).
-if git grep -nIE '683444362393|565036926641|morbv-customer|forgejo:rondamstra|192\.168\.' -- . ':(exclude).forgejo-sync.log' >/dev/null 2>&1; then
+#    The scanner and the secret-scan test legitimately CONTAIN these literals (to
+#    search for them), so they are excluded — otherwise the scan always self-matches.
+if git grep -nIE '683444362393|565036926641|morbv-customer|forgejo:rondamstra|192\.168\.' \
+     -- . \
+     ':(exclude).forgejo-sync.log' \
+     ':(exclude)scripts/preflight.sh' \
+     ':(exclude)tests/**/secretScan*.test.ts' >/dev/null 2>&1; then
   bad "private identifier found in tracked files"
 else
   ok "no private AWS/account/host identifiers in tracked files"

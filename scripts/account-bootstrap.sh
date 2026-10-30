@@ -23,10 +23,10 @@
 #
 # Examples:
 #   # TEST account, existing app, broad managed policy for bring-up:
-#   scripts/account-bootstrap.sh --profile morbv-customer --region eu-west-1 \
-#     --app-id d13a9ux0arcbrs --managed-admin true
+#   scripts/account-bootstrap.sh --profile <your-aws-profile> --region eu-west-1 \
+#     --app-id <your-amplify-app-id> --managed-admin true
 #   # Fresh account, no app yet (wildcard trust), scoped policy:
-#   scripts/account-bootstrap.sh --profile prod-admin --region eu-west-1 \
+#   scripts/account-bootstrap.sh --profile <your-aws-profile> --region eu-west-1 \
 #     --app-id "" --managed-admin false
 
 set -euo pipefail
