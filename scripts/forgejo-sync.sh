@@ -28,8 +28,15 @@ set -euo pipefail
 # ---- Configuration ----------------------------------------------------------
 REPO_DIR="/workspace/projects/aws-map-it"
 REMOTE="origin"
-# Branches allowed to sync. production is DELIBERATELY excluded (PR-gated).
+# Branches allowed to sync. test and production are DELIBERATELY excluded —
+# they are protected staging/release branches, advanced ONLY by approved Forgejo
+# PRs, and auto-deployed to AWS. This script must never push them.
 ALLOWED_BRANCHES_REGEX='^(master|feat/.+)$'
+# Defense-in-depth: an explicit deny-list that is checked INDEPENDENTLY of the
+# allow-list. Even if the allow-list is ever loosened, these never sync here.
+DENIED_BRANCHES_REGEX='^(test|production)$'
+# feat/* branches are published only when explicitly requested (--publish-feat),
+# so a routine master sync never drags a half-done feature branch to the remote.
 LOG_FILE="${FORGEJO_SYNC_LOG:-$REPO_DIR/.forgejo-sync.log}"
 # Pin SSH to the user config so a broken system ssh_config.d include cannot
 # abort parsing (the documented root cause). The key stays on the host.
@@ -37,11 +44,13 @@ SSH_CMD="ssh -F <HOME>/.ssh/config -o BatchMode=yes -o ConnectTimeout=10"
 
 MODE="dry-run"
 RUN_TESTS=1
+PUBLISH_FEAT=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run) MODE="dry-run" ;;
     --push) MODE="push" ;;
     --skip-tests) RUN_TESTS=0 ;;
+    --publish-feat) PUBLISH_FEAT=1 ;;  # opt-in to push a feat/* branch
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
@@ -59,11 +68,20 @@ export GIT_SSH_COMMAND="$SSH_CMD"
 
 log "=== forgejo-sync start (mode=$MODE, tests=$RUN_TESTS) ==="
 
-# ---- Guard 1: on an allowed branch -----------------------------------------
+# ---- Guard 1: on an allowed branch; never a protected branch ---------------
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 log "current branch: $BRANCH"
+# Deny-list first (independent hard stop for test/production).
+if [[ "$BRANCH" =~ $DENIED_BRANCHES_REGEX ]]; then
+  fail "branch '$BRANCH' is a PROTECTED branch (test/production) — advanced only by approved Forgejo PR, never by this script."
+fi
 if ! [[ "$BRANCH" =~ $ALLOWED_BRANCHES_REGEX ]]; then
-  fail "branch '$BRANCH' is not in the allowed set (master, feat/*). production/tags/others are never pushed."
+  fail "branch '$BRANCH' is not in the allowed set (master, feat/*). test/production/tags/others are never pushed."
+fi
+# feat/* requires explicit opt-in so a routine sync never publishes a feature
+# branch by accident.
+if [[ "$BRANCH" == feat/* ]] && [ "$PUBLISH_FEAT" -ne 1 ]; then
+  fail "on feature branch '$BRANCH' but --publish-feat not given. Feature-branch publishing is explicit; re-run with --publish-feat to push it."
 fi
 
 # ---- Guard 2: no uncommitted changes ---------------------------------------
