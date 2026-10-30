@@ -1,0 +1,143 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  AWS Region Resilience Explorer — one-time privileged account bootstrap.
+  Creates the Amplify Gen 2 Backend Deployment service role that Amplify Hosting
+  assumes to deploy the app's backend (Cognito identity pool + the
+  least-privilege geo-maps:GetTile unauth role) via `ampx pipeline-deploy`.
+
+  This stack is the PRIVILEGED, account-level provisioning step. It is deployed
+  ONCE per AWS account by an operator/owner who holds IAM-admin rights — it is
+  deliberately SEPARATE from the Amplify application backend (amplify/), which is
+  deployed routinely by Amplify Hosting with no IAM-admin needed once this role
+  exists. Kiro Crew's restricted principal cannot and must not deploy this.
+
+  No account IDs, profiles, hostnames or credentials are hardcoded — everything
+  is parameterized or derived from the deploy context (AWS::AccountId / Region).
+
+  PERMISSIONS STATUS:
+    * UseAdministratorAccessAmplify=true  -> AWS-managed AdministratorAccess-Amplify.
+      Broad; known-sufficient for Amplify Gen 2 deploys. Use for TEST / bring-up.
+    * UseAdministratorAccessAmplify=false -> the scoped inline policy below.
+      This scoped policy is a best-effort least-privilege STARTING POINT and is
+      **UNVERIFIED** against a full end-to-end `ampx pipeline-deploy`. It may be
+      missing actions real deploys need (e.g. additional CloudFormation/S3/IAM
+      PassRole/Location calls). Do NOT treat it as production-ready until a live
+      deploy in a real account confirms it; widen iteratively from deploy logs.
+
+Parameters:
+  AmplifyAppId:
+    Type: String
+    Description: >
+      The Amplify app id to scope the role's trust to (e.g. d13a9ux0arcbrs).
+      Use "*" to allow any app in this account during first-time setup before an
+      app exists, then re-deploy with the concrete id to tighten the trust.
+    Default: "*"
+    AllowedPattern: "^(\\*|[a-z0-9]{10,30})$"
+  RoleName:
+    Type: String
+    Description: Name for the Amplify backend deployment service role.
+    Default: amplify-backend-deploy-aws-map-it
+  UseAdministratorAccessAmplify:
+    Type: String
+    Description: >
+      "true" attaches the AWS-managed AdministratorAccess-Amplify policy (broad;
+      intended for TEST or initial bring-up). "false" attaches only the scoped
+      inline policy below (preferred for PRODUCTION once the resource set is
+      known). See README for the permission trade-off.
+    Default: "true"
+    AllowedValues: ["true", "false"]
+
+Conditions:
+  AttachManagedAdmin: !Equals [!Ref UseAdministratorAccessAmplify, "true"]
+  ScopeToSingleApp: !Not [!Equals [!Ref AmplifyAppId, "*"]]
+
+Resources:
+  AmplifyBackendDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: >
+        Amplify Gen 2 backend deployment role for AWS Region Resilience Explorer.
+        Assumed by Amplify Hosting to run ampx pipeline-deploy.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: amplify.amazonaws.com
+            Action: "sts:AssumeRole"
+            Condition:
+              # Restrict to THIS account (official Amplify guidance).
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              # Restrict to THIS Amplify app's ARN when a concrete id is given;
+              # wildcard app-arn during first-time setup (AmplifyAppId="*").
+              ArnLike:
+                aws:SourceArn: !If
+                  - ScopeToSingleApp
+                  - !Sub "arn:${AWS::Partition}:amplify:${AWS::Region}:${AWS::AccountId}:apps/${AmplifyAppId}/*"
+                  - !Sub "arn:${AWS::Partition}:amplify:${AWS::Region}:${AWS::AccountId}:apps/*"
+      # Broad managed policy for TEST / bring-up (documented trade-off).
+      ManagedPolicyArns: !If
+        - AttachManagedAdmin
+        - - !Sub "arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess-Amplify"
+        - !Ref "AWS::NoValue"
+      # Scoped inline policy — the minimum this app's backend needs: CDK
+      # bootstrap SSM read + assume the CDK deploy roles + Cognito + Location
+      # (geo-maps) + the CloudFormation/SSM the Gen 2 deployer uses. Attached in
+      # ADDITION to (or instead of) the managed policy.
+      Policies:
+        - PolicyName: amplify-gen2-backend-deploy-scoped
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CdkBootstrapRead
+                Effect: Allow
+                Action: "ssm:GetParameter"
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cdk-bootstrap/*"
+              - Sid: AssumeCdkBootstrapRoles
+                Effect: Allow
+                Action: "sts:AssumeRole"
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-*"
+              - Sid: CloudFormationDeploy
+                Effect: Allow
+                Action:
+                  - "cloudformation:CreateStack"
+                  - "cloudformation:UpdateStack"
+                  - "cloudformation:DeleteStack"
+                  - "cloudformation:DescribeStacks"
+                  - "cloudformation:DescribeStackEvents"
+                  - "cloudformation:GetTemplate"
+                  - "cloudformation:CreateChangeSet"
+                  - "cloudformation:DescribeChangeSet"
+                  - "cloudformation:ExecuteChangeSet"
+                Resource: "*"
+              - Sid: CognitoIdentityPoolForGuestMapAuth
+                Effect: Allow
+                Action:
+                  - "cognito-identity:CreateIdentityPool"
+                  - "cognito-identity:UpdateIdentityPool"
+                  - "cognito-identity:DeleteIdentityPool"
+                  - "cognito-identity:SetIdentityPoolRoles"
+                  - "cognito-identity:GetIdentityPoolRoles"
+                  - "cognito-identity:DescribeIdentityPool"
+                Resource: "*"
+              - Sid: AmplifyOutputsAndAppRead
+                Effect: Allow
+                Action:
+                  - "amplify:GetApp"
+                  - "amplify:GetBranch"
+                  - "amplify:ListApps"
+                Resource: "*"
+
+Outputs:
+  ServiceRoleArn:
+    Description: >
+      ARN of the Amplify backend deployment role. Associate it with the app:
+      aws amplify update-app --app-id <APP_ID> --iam-service-role-arn <THIS_ARN>
+    Value: !GetAtt AmplifyBackendDeployRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ServiceRoleArn"
+  ServiceRoleName:
+    Description: Role name (for console / further automation).
+    Value: !Ref RoleName

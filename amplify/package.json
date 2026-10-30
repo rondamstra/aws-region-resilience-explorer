@@ -2,11 +2,5 @@
   "name": "aws-map-it-backend",
   "type": "module",
   "private": true,
-  "comment": "Amplify Gen 2 backend dependencies live here so the frontend/test install (root package.json) stays light. Installed on demand for Phase D (npx ampx sandbox). The large @aws-amplify/backend + aws-cdk-lib tree is isolated to this folder.",
-  "devDependencies": {
-    "@aws-amplify/backend": "^1.25.1",
-    "@aws-amplify/backend-cli": "^1.4.2",
-    "aws-cdk-lib": "^2.275.0",
-    "constructs": "^10.6.0"
-  }
+  "comment": "Amplify Gen 2 backend module marker. The backend CLI + CDK dependencies (@aws-amplify/backend, @aws-amplify/backend-cli, aws-cdk-lib, constructs) live in the ROOT package.json devDependencies, NOT here — Amplify Hosting runs `npm ci` against the ROOT package.json, so `ampx` must be installed from root for `ampx pipeline-deploy` to resolve. This file only marks amplify/ as an ES module."
 }

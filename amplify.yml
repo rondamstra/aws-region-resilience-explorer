@@ -1,0 +1,49 @@
+version: 1
+# AWS Amplify Hosting build spec for the Amplify Gen 2 app.
+#
+# ROOT CAUSE THIS FIXES: the frontend reads the deployed Cognito identity pool
+# from amplify_outputs.json, which Vite inlines at BUILD TIME (import.meta.glob
+# eager). If the backend is not deployed BEFORE the frontend build, the file is
+# absent, the glob bakes in {}, and the app falls back to the no-auth OSM style.
+#
+# The backend phase runs `ampx pipeline-deploy`, which deploys the Gen 2 backend
+# for this branch and writes amplify_outputs.json to the app root BEFORE the
+# frontend phase runs vite (canonical Gen 2 backend -> frontend ordering).
+#
+# YAML NOTE: every command is a QUOTED scalar. An unquoted command containing a
+# colon-space (e.g. an "ERROR: ..." message) is parsed by YAML as a mapping,
+# which Amplify rejects as a malformed buildspec. Quoting keeps each command a
+# plain string. Double quotes inside a double-quoted scalar are escaped as \".
+backend:
+  phases:
+    build:
+      commands:
+        # NOTE: `npm install`, NOT `npm ci`. @aws-amplify/backend-cli pulls a
+        # nested @aws-cdk/toolkit-lib whose placement npm 11 writes into the
+        # lockfile in a form its own `npm ci` rejects ("Missing @aws-cdk/
+        # toolkit-lib from lock file"), which leaves `ampx` uninstalled and the
+        # backend deploy fails with "could not determine executable to run".
+        # `npm install` self-heals that lockfile discrepancy and installs ampx.
+        - "npm install --no-audit --no-fund"
+        # ampx is provided by @aws-amplify/backend-cli (a root devDependency).
+        - "npx --no-install ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID"
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - "npm install --no-audit --no-fund"
+    build:
+      commands:
+        # Fail the build if the backend phase did not produce the outputs file,
+        # rather than silently shipping the OSM fallback again. No colon in the
+        # message, and the whole command is a quoted scalar.
+        - "test -f amplify_outputs.json || { echo 'ERROR amplify_outputs.json missing - backend deploy did not run before frontend build'; exit 1; }"
+        - "npm run build"
+  artifacts:
+    baseDirectory: dist
+    files:
+      - "**/*"
+  cache:
+    paths:
+      - ".npm/**/*"
+      - "node_modules/**/*"
