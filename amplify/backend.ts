@@ -39,13 +39,14 @@ const mapKey = new CfnAPIKey(geoStack, 'RegionExplorerMapKey', {
   // a new expireTime (see ARCHITECTURE.md §5 rotation procedure).
   expireTime: '2027-01-28T00:00:00Z',
   restrictions: {
-    // Read-only map tile/style access; NO geo:Put*/Delete*, no Places/Routes.
-    allowActions: [
-      'geo:GetMapTile',
-      'geo:GetMapStyleDescriptor',
-      'geo:GetMapSprites',
-      'geo:GetMapGlyphs',
-    ],
+    // Read-only map rendering. For CLASSIC Amazon Location maps, the API-key
+    // AllowActions value MUST be the wildcard `geo:GetMap*` — the enumerated
+    // geo:GetMapTile/StyleDescriptor/Sprites/Glyphs actions are NOT valid as
+    // API-key AllowActions and cause CreateKey to fail with a misleading
+    // "no resource-based policy allows the action" AccessDenied. `geo:GetMap*`
+    // still grants only read-only map rendering; NO geo:Put*/Delete*, no
+    // Places/Routes. (Confirmed against the AWS CreateKey API docs.)
+    allowActions: ['geo:GetMap*'],
     // Scoped to THIS map ARN only — least privilege.
     allowResources: [map.attrArn],
     // Referrer-locked to the Amplify Hosting domain(s); narrow to the real
