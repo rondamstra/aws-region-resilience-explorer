@@ -1,89 +1,166 @@
-import { useEffect, useState } from 'react';
-import { loadRegions } from './data/loadRegions';
-import type { Region } from './data/types';
-import { MapContainer } from './components/MapContainer';
+import { useId } from 'react';
+import MapView from './components/MapView';
+import Disclaimer from './components/Disclaimer';
+import RegionFilters from './components/RegionFilters';
+import ComparisonPanel from './components/ComparisonPanel';
+import ExplainerPanel from './components/ExplainerPanel';
+import { useRegionExplorer } from './hooks/useRegionExplorer';
+import { isProductionMapStyle } from './config/mapStyle';
 import './App.css';
 
 /**
- * App shell for the AWS Region Resilience Explorer.
+ * AWS Region Resilience Explorer — single-page app (ARCHITECTURE.md §1).
  *
- * SCAFFOLD PHASE: this renders the layout, loads + validates the Region dataset
- * (schemaVersion === 1), and shows a placeholder map container. The real map
- * (Amazon Location Service via MapLibre), filters, primary/secondary selection
- * and distance drawing are built in later phases (ARCHITECTURE.md §1, §9).
+ * Wires the six MVP features: show Regions on an interactive map, pick a
+ * primary, compare secondaries, draw great-circle distance lines, filter by
+ * metadata, and surface the distance ≠ resilience disclaimer + explainer.
  */
 export default function App() {
-  const [regions, setRegions] = useState<Region[]>([]);
-  const [usedFixture, setUsedFixture] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadRegions()
-      .then(({ dataset, usedFixture }) => {
-        if (cancelled) return;
-        setRegions(dataset.regions);
-        setUsedFixture(usedFixture);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const primarySelectId = useId();
+  const explorer = useRegionExplorer();
+  const {
+    loading,
+    error,
+    usedFixture,
+    allRegions,
+    visibleRegions,
+    filters,
+    setFilters,
+    primary,
+    primaryCode,
+    setPrimary,
+    secondaryCodes,
+    toggleSecondary,
+    clearSelection,
+    rankedCandidates,
+  } = explorer;
 
   return (
     <div className="app">
       <header className="app__header">
-        <h1>AWS Region Resilience Explorer</h1>
-        <p className="app__tagline">
-          Approximate great-circle separation between AWS Regions for DR
-          reasoning.
-        </p>
+        <div>
+          <h1>AWS Region Resilience Explorer</h1>
+          <p className="app__tagline">
+            Approximate great-circle separation between AWS Regions, as a starting
+            point for choosing a DR secondary.
+          </p>
+        </div>
+        <span
+          className={`app__map-mode ${isProductionMapStyle() ? 'is-prod' : 'is-local'}`}
+          title={
+            isProductionMapStyle()
+              ? 'Rendering the Amazon Location Service basemap (production).'
+              : 'Local demo basemap (no-auth OpenStreetMap raster). Swaps to Amazon Location Service in Phase D.'
+          }
+        >
+          {isProductionMapStyle() ? 'Amazon Location Service' : 'Local demo basemap'}
+        </span>
       </header>
 
-      {/* Distance ≠ resilience: first-class disclaimer (ARCHITECTURE.md §9). */}
-      <aside className="app__disclaimer" role="note">
-        <strong>Heads up:</strong> markers are <em>approximate regional
-        centroids</em>, not datacenter locations. Great-circle distance is a
-        geometric proxy only — it is <em>not</em> network latency, fault
-        isolation, service availability, or compliance.
-      </aside>
+      <Disclaimer />
 
-      <main className="app__main">
-        <MapContainer />
+      {loading && (
+        <p className="app__status" aria-live="polite">
+          Loading Region dataset…
+        </p>
+      )}
 
-        <section className="app__status" aria-live="polite">
-          {loading && <p>Loading Region dataset…</p>}
-          {error && <p className="app__error">Failed to load dataset: {error}</p>}
-          {!loading && !error && (
-            <p>
-              Loaded <strong>{regions.length}</strong> Region
-              {regions.length === 1 ? '' : 's'}
-              {usedFixture && (
-                <>
-                  {' '}
-                  <span className="app__badge">
-                    sample fixture (real dataset not found)
-                  </span>
-                </>
+      {error && (
+        <div className="app__error" role="alert">
+          <strong>Could not load the Region dataset.</strong>
+          <p>{error}</p>
+          <button type="button" onClick={() => window.location.reload()}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <>
+          <p className="app__status" aria-live="polite">
+            Showing <strong>{visibleRegions.length}</strong> of{' '}
+            <strong>{allRegions.length}</strong> commercial AWS Region
+            {allRegions.length === 1 ? '' : 's'}.
+            {usedFixture && (
+              <span className="app__badge">
+                sample fixture (real dataset not found)
+              </span>
+            )}
+          </p>
+
+          <main className="app__main">
+            <div className="app__map-col">
+              <MapView
+                regions={visibleRegions}
+                primary={primaryCode}
+                secondaries={secondaryCodes}
+                onSelect={setPrimary}
+              />
+            </div>
+
+            <aside className="app__panel" aria-label="Controls and comparison">
+              <section className="primary-picker" aria-labelledby="primary-heading">
+                <h2 id="primary-heading" className="primary-picker__heading">
+                  Primary Region
+                </h2>
+                <label htmlFor={primarySelectId} className="sr-only">
+                  Select primary Region
+                </label>
+                <select
+                  id={primarySelectId}
+                  data-testid="primary-select"
+                  value={primaryCode ?? ''}
+                  onChange={(e) =>
+                    setPrimary(e.target.value === '' ? null : e.target.value)
+                  }
+                >
+                  <option value="">— none selected —</option>
+                  {visibleRegions.map((r) => (
+                    <option key={r.regionCode} value={r.regionCode}>
+                      {r.name} ({r.regionCode})
+                    </option>
+                  ))}
+                </select>
+                {primary && (
+                  <p className="primary-picker__current">
+                    Selected: <strong>{primary.name}</strong>
+                  </p>
+                )}
+              </section>
+
+              <RegionFilters
+                regions={allRegions}
+                filters={filters}
+                onChange={setFilters}
+                matchCount={visibleRegions.length}
+              />
+
+              {visibleRegions.length === 0 && (
+                <p className="app__empty" role="status">
+                  No Regions match the current filters. Adjust or clear them to
+                  see Regions again.
+                </p>
               )}
-              .
-            </p>
-          )}
-        </section>
-      </main>
+
+              <ComparisonPanel
+                primary={primary}
+                visibleRegions={visibleRegions}
+                secondaryCodes={secondaryCodes}
+                rankedCandidates={rankedCandidates}
+                onToggleSecondary={toggleSecondary}
+                onClear={clearSelection}
+              />
+
+              <ExplainerPanel />
+            </aside>
+          </main>
+        </>
+      )}
 
       <footer className="app__footer">
         <small>
-          AWS Builder Center “Map It” hackathon · scaffold phase · no AWS
-          resources deployed.
+          AWS Builder Center “Map It” hackathon · static SPA · markers are
+          approximate regional centroids, not datacenter locations.
         </small>
       </footer>
     </div>
