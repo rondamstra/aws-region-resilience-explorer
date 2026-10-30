@@ -132,3 +132,63 @@ These are **not** done by Kiro Crew and require the owner:
 
 Until these are done, the app runs from the development sandbox (test account)
 and the local OSM fallback.
+
+---
+
+## 8. Autonomous Forgejo sync (`scripts/forgejo-sync.sh`)
+
+A host-side script syncs local work to the authoritative Forgejo remote with
+strict guardrails. It is the supported, deterministic mechanism — a plain shell
+script driven by git, invoked event-driven (after integration) or by a no-LLM
+Kiro Crew cron job. **No Kiro Crew internals are modified.**
+
+### What it does / refuses
+
+| Guarantee | How |
+|---|---|
+| Forgejo stays authoritative | Pushes only to `origin` (Forgejo). No GitHub, no mirror. |
+| Syncs `master` + `feat/*` only | Branch allow-list regex `^(master\|feat/.+)$`. |
+| **Never** pushes `production`, tags, or other refs | production fails the allow-list; `--no-tags` on fetch; explicit single refspec on push (no `--tags`, no `--mirror`). |
+| **Never** force-pushes or rewrites history | Fast-forward only; `--force*` never used. |
+| Fetch first; reject divergence | Fetches the branch, then requires the remote SHA to be an **ancestor** of local (fast-forwardable). Divergent remote → STOP. |
+| No push with uncommitted changes | `git diff`/`status --porcelain` clean check → STOP if dirty. |
+| No push on failed verification | Runs validator + typecheck + build + Vitest; any failure → STOP. |
+| SSH key stays on host | Uses `ssh -F ~/.ssh/config` (host key `~/.ssh/<FORGEJO_SSH_KEY>`). The key is never read, printed, copied, or exposed to a Mate. |
+| Every attempt recorded | Appends timestamped lines to `.forgejo-sync.log` (gitignored). |
+
+### SSH note
+
+The script pins `GIT_SSH_COMMAND="ssh -F <HOME>/.ssh/config"` so a
+malformed system `ssh_config.d` include cannot abort config parsing (the
+original root cause). The repo also sets `core.sshCommand` to the same, so plain
+`git` commands in this repo resolve the `forgejo` alias reliably.
+
+### Usage
+
+```bash
+# Dry-run (default): runs every guard + verification, pushes NOTHING.
+scripts/forgejo-sync.sh --dry-run
+
+# Real push (fast-forward only), after a clean dry-run:
+scripts/forgejo-sync.sh --push
+```
+
+### Event-driven vs periodic
+
+Prefer **event-driven**: invoke `--push` right after a successful integration on
+`master` (or when publishing a `feat/*` branch). Avoid needless periodic pushes.
+If a schedule is wanted, register a **no-LLM cron** that runs the script (e.g.
+`kirocrew cron add --script '~/.kiro/.../forgejo_sync.py'` wrapping it, or a
+command cron) — it only pushes when there is a fast-forwardable change and all
+guards pass, so quiet cycles are no-ops.
+
+### How to disable
+
+- Stop invoking the script (it does nothing on its own), or
+- Remove/pause the cron job: `kirocrew cron remove <id>` (or pause in the
+  Schedule UI), or
+- Revoke by removing `core.sshCommand` / the host SSH key if sync must be
+  fully severed.
+
+Nothing about this script touches `production`, branch protection, GitHub
+mirroring, or AWS — those remain owner-gated per §3–§7.
