@@ -1,12 +1,27 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
 # Dependencies
 node_modules/
+.pnp
+.pnp.js
 
 # Build output
 dist/
+dist-ssr
 build/
 .vite/
+*.local
 
-# Amplify generated / local
+# TS build info
+*.tsbuildinfo
+
+# Amplify Gen 2 generated / local backend artifacts
 .amplify/
 amplify_outputs*.json
 amplifyconfiguration*.json
@@ -14,8 +29,17 @@ amplifyconfiguration*.json
 # Git worktrees used for parallel mate development
 .worktrees/
 
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
 # Environment / local
 .env
 .env.*
-.DS_Store
-*.log
