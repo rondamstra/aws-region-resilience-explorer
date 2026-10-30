@@ -102,28 +102,42 @@ else
       RoleName="$ROLE_NAME" \
       UseAdministratorAccessAmplify="$MANAGED_ADMIN"
 fi
-ROLE_ARN="$($AWS cloudformation describe-stacks --stack-name "$STACK_NAME" \
-  --query "Stacks[0].Outputs[?OutputKey=='ServiceRoleArn'].OutputValue" --output text 2>/dev/null || echo "")"
-echo "  service role ARN: ${ROLE_ARN:-<pending>}"
+if [ "$DRY_RUN" -eq 1 ]; then
+  # In dry-run the stack is NOT deployed, so its outputs don't exist yet. Do not
+  # query them (an empty result would wrongly look like "no role"). Show the ARN
+  # the stack WOULD export instead.
+  ROLE_ARN="arn:aws:iam::${ACCOUNT}:role/${ROLE_NAME} (dry-run; not yet created)"
+  echo "  service role ARN (dry-run, predicted): $ROLE_ARN"
+else
+  ROLE_ARN="$($AWS cloudformation describe-stacks --stack-name "$STACK_NAME" \
+    --query "Stacks[0].Outputs[?OutputKey=='ServiceRoleArn'].OutputValue" --output text 2>/dev/null || echo "")"
+  echo "  service role ARN: ${ROLE_ARN:-<pending>}"
+fi
 
 # ---- 3. Associate the role with the Amplify app -----------------------------
 # This step sets ONLY the service role. It NEVER changes the app's hosting
 # platform: `update-app` is called with --iam-service-role-arn and nothing else,
 # so --platform is never sent and the existing platform is preserved verbatim.
 # This app is a STATIC SPA and must stay platform WEB (not WEB_COMPUTE).
-if [ -n "$APP_ID" ] && [ -n "$ROLE_ARN" ]; then
+#
+# Gating keys off --app-id (what the operator supplied), NOT off ROLE_ARN, so
+# dry-run with an app id correctly reports the association it WOULD perform
+# rather than falsely claiming "no --app-id given".
+if [ -n "$APP_ID" ]; then
   echo "== 3. Associate role with Amplify app $APP_ID =="
-  # Read (never write) the current platform and surface it for the operator.
-  CURRENT_PLATFORM="$($AWS amplify get-app --app-id "$APP_ID" --query app.platform --output text 2>/dev/null || echo "unknown")"
-  echo "  current app platform: $CURRENT_PLATFORM (this script will NOT change it)"
-  if [ "$CURRENT_PLATFORM" = "WEB_COMPUTE" ]; then
-    echo "  NOTE: platform is WEB_COMPUTE, but this is a static SPA — WEB is expected."
-    echo "        Not changing it automatically. Review/correct in the Amplify console if intended."
-  fi
   if [ "$DRY_RUN" -eq 1 ]; then
-    echo "  [dry-run] would run: aws amplify update-app --app-id $APP_ID --iam-service-role-arn $ROLE_ARN"
+    echo "  [dry-run] would associate role with app $APP_ID:"
+    echo "  [dry-run]   aws amplify update-app --app-id $APP_ID --iam-service-role-arn <ServiceRoleArn>"
     echo "  [dry-run] (platform is NOT part of this call and is left unchanged)"
   else
+    [ -n "$ROLE_ARN" ] || { echo "  ERROR: no ServiceRoleArn from stack $STACK_NAME; cannot associate." >&2; exit 1; }
+    # Read (never write) the current platform and surface it for the operator.
+    CURRENT_PLATFORM="$($AWS amplify get-app --app-id "$APP_ID" --query app.platform --output text 2>/dev/null || echo "unknown")"
+    echo "  current app platform: $CURRENT_PLATFORM (this script will NOT change it)"
+    if [ "$CURRENT_PLATFORM" = "WEB_COMPUTE" ]; then
+      echo "  NOTE: platform is WEB_COMPUTE, but this is a static SPA — WEB is expected."
+      echo "        Not changing it automatically. Review/correct in the Amplify console if intended."
+    fi
     # Only the service role is set; platform is intentionally omitted.
     $AWS amplify update-app --app-id "$APP_ID" --iam-service-role-arn "$ROLE_ARN" >/dev/null
     SAVED="$($AWS amplify get-app --app-id "$APP_ID" --query app.iamServiceRoleArn --output text)"
@@ -136,4 +150,10 @@ else
   echo "== 3. Skipped app association (no --app-id given; create the app first, then rerun) =="
 fi
 
-echo "== Bootstrap complete. Routine deploys now run via Amplify Hosting (ampx pipeline-deploy). =="
+# Completion banner is dry-run aware: a dry-run makes NO changes and must not
+# imply the bootstrap actually happened.
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "== DRY-RUN complete: NO changes were made. Re-run without --dry-run to apply. =="
+else
+  echo "== Bootstrap complete. Routine deploys now run via Amplify Hosting (ampx pipeline-deploy). =="
+fi
