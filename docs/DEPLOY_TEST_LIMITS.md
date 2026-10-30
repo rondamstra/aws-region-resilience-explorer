@@ -97,3 +97,54 @@ promoted to the `test` branch and observed on a real Amplify deploy:
 3. `amplify_outputs.json` present at frontend build (guard passes, build does
    not `exit 1`),
 4. the hosted app renders authenticated map tiles — **not** the OSM fallback.
+
+---
+
+## Automated quality-gate matrix — OFFLINE vs LIVE-REQUIRED (Phase 4)
+
+The Phase 4 independent quality gates (added by **map-tester**, branch
+`feat/tests`) are **config-correctness** checks. Every one runs with zero AWS
+access and proves only that the repo is *shaped* correctly. **No unit test in
+this suite proves a successful AWS deployment** — a green `vitest` + green
+`preflight.sh --offline` is *necessary but not sufficient*. The claims that
+require live AWS (and, for render, a real browser + WebGL) are listed separately
+and are **not** asserted by any test here.
+
+### OFFLINE gates (prove config correctness only — run with no AWS)
+
+| Gate | What it proves | Where |
+|------|----------------|-------|
+| 1. Build spec | `amplify.yml` is real-parsed YAML; every command is a string; backend runs before frontend; `ampx pipeline-deploy` present; `amplify_outputs.json` guard present; uses `npm install`, never `npm ci`. | `tests/contract/amplifyBuildSpec.test.ts` |
+| 2. Root CLI deps | Root `package.json` declares `@aws-amplify/backend-cli` (provides `ampx`) **and** `@aws-amplify/backend`. | `tests/contract/amplifyBuildSpec.test.ts` |
+| 3. CFN service role | `infra/amplify-service-role.yaml` parses (CFN intrinsic tags registered opaque); one `AWS::IAM::Role` trusting `amplify.amazonaws.com` with `aws:SourceAccount` + `aws:SourceArn` conditions; parameterized (`AmplifyAppId`, `RoleName`); no hardcoded 12-digit account id; Outputs expose the role ARN. | `tests/contract/amplifyServiceRole.test.ts` |
+| 4. Deploy scripts | `scripts/preflight.sh` + `scripts/account-bootstrap.sh` exist, are executable (git mode `100755`), and `account-bootstrap.sh` carries no real account id / profile / RFC-1918 `192.168/16` private host. | `tests/contract/secretScan.test.ts` |
+| 5. No-OSM-in-prod | Resolver precedence (env URL → Cognito pool → OSM fallback): a configured Cognito pool resolves to the **v2 Amazon Location** style, OSM **only** as the no-config fallback; `resolveCognitoMapConfig` returns the pool iff `auth.identity_pool_id` present, `undefined` otherwise. | `tests/unit/mapStyleProdContract.test.ts`, `tests/unit/mapStyleResolution.test.ts` |
+| 6. Cognito least-privilege | `amplify/backend.ts` grants `geo-maps:GetTile` on `arn:aws:geo-maps:<region>::provider/default` to the **unauthenticated** role, and grants **no** `geo-maps:GetStaticMap` / `geo-maps:*` on the Cognito role. | `tests/contract/mapAuth.test.ts` |
+| 7. Secret / identifier scan | No tracked source file (excluding `.forgejo-sync.log`, the scanner, and the scan test itself) contains a real account id, the real profile name, a `forgejo:<owner>` url, or an RFC-1918 `192.168/16` private host. | `tests/contract/secretScan.test.ts` |
+
+> Gate 5 caveat: the "`amplify_outputs.json` present → v2 Cognito style" branch
+> cannot be toggled at runtime because Vite inlines that file at **build** time
+> and it is absent without a deploy. The suite exercises that branch via a pure
+> mirror of the resolver's decision logic **and** asserts the real `src/`
+> precedence stays faithful to the mirror — it does **not** prove a real deploy
+> emits a real pool.
+
+### LIVE-REQUIRED (NOT proven by any test here — need real AWS, and a browser for render)
+
+- **`ampx pipeline-deploy` success** — service-role permissions, SCP/boundary
+  denials, CloudFormation CREATE/UPDATE, Cognito identity-pool creation. Only on
+  a real Amplify deploy (`preflight.sh --live` probes readiness, not success).
+- **Real `geo-maps:GetTile` → 200 with guest credentials** — anonymous Cognito
+  identity exchange + SigV4-signed tile request against the live endpoint.
+- **`geo-maps:GetStaticMap` → 403** — the live negative proof that the guest
+  role is least-privilege (GetTile only). The test asserts the *grant* is absent
+  in source; only the account proves the 403.
+- **Browser / WebGL tile render** — the hosted app actually painting v2 tiles
+  (not the OSM fallback). Needs a real browser + WebGL; jsdom cannot.
+- **Mobile / responsive render** — real-device or emulator only.
+- **`amplify_outputs.json` present at frontend build** — only true inside the
+  Amplify build container after the backend phase deploys.
+
+**Bottom line:** gates 1–7 are a shape/contract firewall. The deploy itself,
+the authenticated tile path, and the rendered map are verified **only** by
+promoting to the `test` branch and observing a live Amplify deploy + a browser.
