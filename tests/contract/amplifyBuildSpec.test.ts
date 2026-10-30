@@ -81,12 +81,13 @@ describe('Amplify build spec — real YAML validation (regression)', () => {
     expect(backendCmds.some((c) => c.includes('ampx pipeline-deploy'))).toBe(true);
   });
 
-  it('installs npm deps before invoking ampx (npm ci precedes pipeline-deploy)', () => {
+  it('installs npm deps before invoking ampx (install precedes pipeline-deploy)', () => {
     const backendCmds = (doc.backend?.phases?.build?.commands ?? []) as string[];
-    const ciIdx = backendCmds.findIndex((c) => c.startsWith('npm ci'));
+    // Accept `npm install` (required — see the npm-ci lockfile bug below).
+    const installIdx = backendCmds.findIndex((c) => /npm (install|ci)/.test(c));
     const ampxIdx = backendCmds.findIndex((c) => c.includes('ampx pipeline-deploy'));
-    expect(ciIdx).toBeGreaterThanOrEqual(0);
-    expect(ampxIdx).toBeGreaterThan(ciIdx);
+    expect(installIdx).toBeGreaterThanOrEqual(0);
+    expect(ampxIdx).toBeGreaterThan(installIdx);
   });
 
   it('frontend build guards on amplify_outputs.json existence', () => {
@@ -97,6 +98,44 @@ describe('Amplify build spec — real YAML validation (regression)', () => {
 
   it('publishes the vite dist/ directory', () => {
     expect(doc.frontend?.artifacts?.baseDirectory).toBe('dist');
+  });
+
+  // ---- CLI dependency contract (the "could not determine executable" bug) --
+  // ampx comes from @aws-amplify/backend-cli. Amplify Hosting installs the ROOT
+  // package.json, so the CLI MUST be a root dependency, or `ampx` is never on
+  // PATH and the backend phase dies with "could not determine executable".
+  it('declares @aws-amplify/backend-cli (provides ampx) in the ROOT package.json', () => {
+    const pkg = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+    const all = { ...pkg.dependencies, ...pkg.devDependencies };
+    expect(all['@aws-amplify/backend-cli'], '@aws-amplify/backend-cli must be a root dep (provides ampx)').toBeDefined();
+    expect(all['@aws-amplify/backend'], '@aws-amplify/backend must be a root dep').toBeDefined();
+  });
+
+  it('backend phase installs deps and invokes ampx via npx --no-install', () => {
+    const backendCmds = (doc.backend?.phases?.build?.commands ?? []) as string[];
+    // Must install before invoking ampx.
+    const installIdx = backendCmds.findIndex((c) => /npm (install|ci)/.test(c));
+    const ampxIdx = backendCmds.findIndex((c) => c.includes('ampx pipeline-deploy'));
+    expect(installIdx).toBeGreaterThanOrEqual(0);
+    expect(ampxIdx).toBeGreaterThan(installIdx);
+  });
+
+  it('uses npm install (not npm ci) — ci rejects the backend-cli toolkit-lib lockfile', () => {
+    // The @aws-cdk/toolkit-lib nested dep makes `npm ci` fail the lockfile sync
+    // check (npm 11), leaving ampx uninstalled. The buildspec must use
+    // `npm install`, which self-heals. Guard against a regression to `npm ci`.
+    const allCmds = (
+      [
+        ...(doc.backend?.phases?.build?.commands ?? []),
+        ...(doc.frontend?.phases?.preBuild?.commands ?? []),
+      ] as string[]
+    );
+    for (const c of allCmds) {
+      expect(c, `build command must not use 'npm ci' (breaks ampx): ${c}`).not.toMatch(/\bnpm ci\b/);
+    }
+    expect(allCmds.some((c) => /\bnpm install\b/.test(c))).toBe(true);
   });
 });
 
