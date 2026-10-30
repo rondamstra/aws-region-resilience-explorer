@@ -6,12 +6,21 @@
 **Author (owner):** map-architect
 **Status:** DRAFT — awaiting lead review (gate before implementation)
 
-> **Map-auth decision (FINAL):** The restricted Amazon Location Service API key
-> is the **sole** public map-access mechanism. The unauthenticated Cognito
-> identity pool has been **removed** from the backend (`amplify/auth/resource.ts`
-> deleted; `defineBackend` no longer wires `auth`). The frontend reads the map
-> style URL + API key from the generated config and never exchanges Cognito
-> credentials. See §5.
+> **Map-auth decision (UPDATED — Cognito guest identity pool is now the target
+> mechanism):** Evidence from a direct SigV4 probe showed `geo-maps:GetTile` is
+> rejected by an **implicit deny** (no identity-based policy allows the action)
+> — so the authorized path is a **principal with an explicit `geo-maps:GetTile`
+> Allow**. We have therefore **(re)introduced** a Cognito **unauthenticated
+> (guest) identity pool** whose unauth role carries that least-privilege grant
+> (`amplify/auth/resource.ts` recreated; `defineBackend({ auth })` wires it). See
+> the new **§5a** for the full Cognito architecture and the implicit-deny
+> evidence.
+>
+> The restricted API key is **RETAINED for now** and runs **alongside** the
+> Cognito path (two auth paths coexist, intentionally and safely) so nothing
+> breaks. The API key will be **removed in a follow-up once Cognito-signed tiles
+> are verified working**. The original API-key-only material in §4/§5 is kept
+> below but is **being phased out** — read §5a for the current direction.
 
 ---
 
@@ -297,6 +306,128 @@ deployment (see §7); the deploy principal needs `geo:CreateKey` /
 `geo:UpdateKey` / `geo:DeleteKey` (plus the key describe actions) to provision
 the key. Note that with the v2 migration **no `geo:CreateMap`** is needed — v2
 has no per-account map resource to create.
+
+---
+
+## 5a. Cognito unauthenticated identity pool (CURRENT map-auth direction)
+
+> **This section supersedes the API-key-only decision in §4/§5 for the map-auth
+> mechanism.** The restricted API key (§5) is **retained transitionally** and
+> runs alongside the Cognito path; it will be **removed once Cognito-signed tiles
+> are verified** (see "Phasing out the API key" below).
+
+### Why Cognito — the implicit-deny evidence
+
+A direct IAM SigV4 call (as an admin principal) to `geo-maps:GetTile` on the
+managed Standard-style provider returns **403**:
+
+```
+User ... is not authorized to perform: geo-maps:GetTile on resource
+arn:aws:geo-maps:eu-west-1::provider/default because no identity-based policy
+allows the geo-maps:GetTile action
+```
+
+This is an **IMPLICIT deny — a missing Allow**, NOT an explicit `Deny`, NOT an
+SCP, and NOT a permissions boundary. Confirmed by probing the other managed
+Standard-style sub-resources:
+
+| geo-maps action | Result without an explicit grant | Needs an Allow? |
+|---|---|---|
+| `geo-maps:GetStyleDescriptor` | **200** (even unauthenticated) | **No** |
+| `geo-maps:GetGlyphs` | **200** (even unauthenticated) | **No** |
+| `geo-maps:GetSprites` | 200 (managed style, same class as glyphs) | **No** |
+| `geo-maps:GetTile` | **403 implicit deny** | **Yes — explicit Allow required** |
+
+So the managed Standard style's **descriptor, glyphs and sprites are served
+without any authorization**, but **tiles (`GetTile`) require a principal whose
+identity-based IAM policy explicitly allows the action**. The fix is therefore
+to supply exactly such a principal. A **Cognito unauthenticated (guest) role**
+is precisely that: an IAM role whose policy we control and which anonymous
+browser clients can assume via the identity pool.
+
+### Architecture
+
+- **Guest identities, no User Pool login UI.** `amplify/auth/resource.ts`
+  declares `defineAuth({ loginWith: { email: true } })`. The `loginWith` is
+  present **only to satisfy `defineAuth`'s required type shape** — Amplify Gen 2
+  (`@aws-amplify/backend ^1.25.1`) exposes **no first-class guest-only option**,
+  so this is the documented workaround. **No sign-in UI is built and the User
+  Pool is intentionally unused.** The only path the product uses is the
+  **unauthenticated (guest)** one.
+- **Unauthenticated identities enabled.** The Amplify auth construct defaults to
+  `allowUnauthenticatedIdentities: true`, so defining the resource creates an
+  **identity pool that mints anonymous credentials** plus an **unauthenticated
+  IAM role** we grant map access to.
+- **Least-privilege unauth role grant.** In `amplify/backend.ts`:
+
+  ```ts
+  backend.auth.resources.unauthenticatedUserIamRole.addToPrincipalPolicy(
+    new PolicyStatement({
+      actions: ['geo-maps:GetTile'],
+      resources: ['arn:aws:geo-maps:eu-west-1::provider/default'],
+    }),
+  );
+  ```
+
+  **`geo-maps:GetTile` ONLY** — the single action the implicit-deny evidence
+  proved is required — scoped to the **single provider ARN** (double colon:
+  geo-maps resources have no account-id segment; `default` is the Standard
+  managed-style provider). **`GetStyleDescriptor` / `GetGlyphs` / `GetSprites`
+  need NO grant** (they return 200 for the managed style). `GetStaticMap` is
+  added **only if** a static-map feature is later required.
+
+### Frontend flow (amazon-location auth helper + MapLibre transformRequest)
+
+1. The app reads the **identity pool id + region** from `amplify_outputs.json`
+   (emitted automatically by `defineAuth` under the `auth` block) and the
+   **v2 style URL + region** from the `custom` outputs (`mapStyleUrl`,
+   `mapRegion`).
+2. It uses **`amazon-location-utilities-auth-helper`**
+   (`withIdentityPoolId(identityPoolId)`) to exchange **anonymous Cognito guest
+   credentials** (STS `GetCredentialsForIdentity`) and obtain a MapLibre
+   `transformRequest`.
+3. MapLibre GL JS loads the managed Standard style; the helper's
+   **`transformRequest` SigV4-signs each `GetTile` request** with the guest
+   credentials, satisfying the explicit `GetTile` Allow. Descriptor/glyphs/sprites
+   load without signing (no grant needed), but the helper signs uniformly, which
+   is harmless.
+4. Our own data (Region markers, great-circle lines) remains **client-side
+   GeoJSON** drawn on top of the basemap.
+
+### Config exposure (non-secret only)
+
+Only **non-secret** config reaches the browser: the **identity pool id**,
+**region**, and **style URL**. The identity pool id is a public identifier
+(designed to be embedded in client code, like the API key string was). **No
+secrets** are exposed — no long-lived credentials, no User Pool client secret
+(public SPA client has none), no raw key material.
+
+### Dev vs prod separation
+
+Dev (Amplify **sandbox**, `npx ampx sandbox`, DEV/TEST account <AWS_TEST_ACCOUNT_ID>,
+eu-west-1) and prod (the **`master` Amplify pipeline**) each provision their
+**own, independent identity pool, unauth role and grant** — distinct
+CloudFormation resources in distinct stacks with distinct identity pool ids. The
+sandbox identity pool is never promoted to production; each environment mints
+its own guest credentials. This mirrors the dev/prod key separation in §5(d).
+
+### Cost
+
+- **Cognito identity pool guest credentials are FREE** — there is **no charge**
+  for unauthenticated (guest) identities or for the identity pool itself.
+- **STS `GetCredentialsForIdentity` is not charged.** No User Pool MAU cost is
+  incurred because the User Pool is unused (no sign-ins/MAUs).
+- The only metered cost remains **map-tile requests** against Amazon Location
+  Service, exactly as in §7 — Cognito adds **no new cost line**.
+
+### Phasing out the API key
+
+The restricted `CfnAPIKey` (§5) is **kept in place for the current deploy** so
+the existing map keeps working while the Cognito path is validated. Once
+Cognito-signed `GetTile` is **verified working end-to-end**, a follow-up change
+will **remove the `CfnAPIKey`** and the `custom` outputs that carry the key
+name/ARN, leaving Cognito as the sole mechanism. Until then the §4/§5 API-key
+material is **retained but being phased out** (not deleted).
 
 ---
 
