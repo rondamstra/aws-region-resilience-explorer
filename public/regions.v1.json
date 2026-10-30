@@ -1,0 +1,573 @@
+{
+  "schemaVersion": 1,
+  "generatedDate": "2026-10-30",
+  "datasetProvenance": {
+    "source": "Region identifiers and metadata (code, name, launch year, AZ count, geography type) compiled from the official AWS Global Infrastructure documentation and the AWS Systems Manager public parameter namespace /aws/service/global-infrastructure/... . Coordinates are approximate centroids of each Region's publicly named metro/city location, taken from well-known public geographic facts (standard latitude/longitude of the named city or metro area).",
+    "retrievedDate": "2026-10-30",
+    "accuracyNote": "Coordinates are approximate centroids of each Region's publicly named metro/city location, NOT AWS datacenter locations. AWS does not publish datacenter coordinates. Values are rounded to ~2 decimal places and are intended only as geographic reference points for visualization and great-circle distance estimation.",
+    "license": "Derived compilation. Region metadata is factual AWS-published infrastructure data (AWS Global Infrastructure docs + SSM public parameters). Coordinates are factual public geographic facts (city/metro centroids); individual lat/lon facts are not copyrightable and no third-party dataset was copied. The compilation is published in-repo for use within this project. See data/README.md and docs/ARCHITECTURE.md §6."
+  },
+  "regions": [
+    {
+      "regionCode": "us-east-1",
+      "name": "US East (N. Virginia)",
+      "lat": 38.95,
+      "lon": -77.45,
+      "country": "United States",
+      "continent": "North America",
+      "launchYear": 2006,
+      "azCount": 6,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/us-east-1; Northern Virginia (Ashburn/Washington DC metro) public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Northern Virginia metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "us-east-2",
+      "name": "US East (Ohio)",
+      "lat": 40.0,
+      "lon": -83.0,
+      "country": "United States",
+      "continent": "North America",
+      "launchYear": 2016,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/us-east-2; Columbus, Ohio metro public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Columbus, Ohio metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "us-west-1",
+      "name": "US West (N. California)",
+      "lat": 37.78,
+      "lon": -122.42,
+      "country": "United States",
+      "continent": "North America",
+      "launchYear": 2009,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/us-west-1; Northern California (San Francisco Bay Area) public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Northern California (SF Bay Area) centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "us-west-2",
+      "name": "US West (Oregon)",
+      "lat": 45.84,
+      "lon": -119.7,
+      "country": "United States",
+      "continent": "North America",
+      "launchYear": 2011,
+      "azCount": 4,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/us-west-2; Oregon (Boardman/Portland area) public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Oregon (Boardman/Umatilla) centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ca-central-1",
+      "name": "Canada (Central)",
+      "lat": 45.5,
+      "lon": -73.57,
+      "country": "Canada",
+      "continent": "North America",
+      "launchYear": 2016,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ca-central-1; Montreal, Quebec public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Montreal metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ca-west-1",
+      "name": "Canada West (Calgary)",
+      "lat": 51.05,
+      "lon": -114.07,
+      "country": "Canada",
+      "continent": "North America",
+      "launchYear": 2023,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ca-west-1; Calgary, Alberta public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Calgary metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "sa-east-1",
+      "name": "South America (Sao Paulo)",
+      "lat": -23.55,
+      "lon": -46.63,
+      "country": "Brazil",
+      "continent": "South America",
+      "launchYear": 2011,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/sa-east-1; Sao Paulo, Brazil public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Sao Paulo metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "eu-west-1",
+      "name": "Europe (Ireland)",
+      "lat": 53.33,
+      "lon": -6.25,
+      "country": "Ireland",
+      "continent": "Europe",
+      "launchYear": 2007,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/eu-west-1; Dublin, Ireland public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Dublin metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "eu-west-2",
+      "name": "Europe (London)",
+      "lat": 51.51,
+      "lon": -0.13,
+      "country": "United Kingdom",
+      "continent": "Europe",
+      "launchYear": 2016,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/eu-west-2; London, UK public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate London metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "eu-west-3",
+      "name": "Europe (Paris)",
+      "lat": 48.86,
+      "lon": 2.35,
+      "country": "France",
+      "continent": "Europe",
+      "launchYear": 2017,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/eu-west-3; Paris, France public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Paris metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "eu-central-1",
+      "name": "Europe (Frankfurt)",
+      "lat": 50.11,
+      "lon": 8.68,
+      "country": "Germany",
+      "continent": "Europe",
+      "launchYear": 2014,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/eu-central-1; Frankfurt, Germany public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Frankfurt metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "eu-central-2",
+      "name": "Europe (Zurich)",
+      "lat": 47.37,
+      "lon": 8.54,
+      "country": "Switzerland",
+      "continent": "Europe",
+      "launchYear": 2022,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/eu-central-2; Zurich, Switzerland public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Zurich metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "eu-north-1",
+      "name": "Europe (Stockholm)",
+      "lat": 59.33,
+      "lon": 18.07,
+      "country": "Sweden",
+      "continent": "Europe",
+      "launchYear": 2018,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/eu-north-1; Stockholm, Sweden public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Stockholm metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "eu-south-1",
+      "name": "Europe (Milan)",
+      "lat": 45.46,
+      "lon": 9.19,
+      "country": "Italy",
+      "continent": "Europe",
+      "launchYear": 2020,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/eu-south-1; Milan, Italy public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Milan metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "eu-south-2",
+      "name": "Europe (Spain)",
+      "lat": 40.42,
+      "lon": -3.7,
+      "country": "Spain",
+      "continent": "Europe",
+      "launchYear": 2022,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/eu-south-2; Aragon/Madrid, Spain public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Spain (Madrid reference) centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "me-south-1",
+      "name": "Middle East (Bahrain)",
+      "lat": 26.07,
+      "lon": 50.56,
+      "country": "Bahrain",
+      "continent": "Middle East",
+      "launchYear": 2019,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/me-south-1; Bahrain public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Bahrain centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "me-central-1",
+      "name": "Middle East (UAE)",
+      "lat": 24.47,
+      "lon": 54.37,
+      "country": "United Arab Emirates",
+      "continent": "Middle East",
+      "launchYear": 2022,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/me-central-1; Abu Dhabi, UAE public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate UAE (Abu Dhabi reference) centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "il-central-1",
+      "name": "Israel (Tel Aviv)",
+      "lat": 32.09,
+      "lon": 34.78,
+      "country": "Israel",
+      "continent": "Middle East",
+      "launchYear": 2023,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/il-central-1; Tel Aviv, Israel public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Tel Aviv metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "af-south-1",
+      "name": "Africa (Cape Town)",
+      "lat": -33.93,
+      "lon": 18.42,
+      "country": "South Africa",
+      "continent": "Africa",
+      "launchYear": 2020,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/af-south-1; Cape Town, South Africa public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Cape Town metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-east-1",
+      "name": "Asia Pacific (Hong Kong)",
+      "lat": 22.32,
+      "lon": 114.17,
+      "country": "China (Hong Kong SAR)",
+      "continent": "Asia Pacific",
+      "launchYear": 2019,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-east-1; Hong Kong public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Hong Kong centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-south-1",
+      "name": "Asia Pacific (Mumbai)",
+      "lat": 19.08,
+      "lon": 72.88,
+      "country": "India",
+      "continent": "Asia Pacific",
+      "launchYear": 2016,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-south-1; Mumbai, India public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Mumbai metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-south-2",
+      "name": "Asia Pacific (Hyderabad)",
+      "lat": 17.39,
+      "lon": 78.49,
+      "country": "India",
+      "continent": "Asia Pacific",
+      "launchYear": 2022,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-south-2; Hyderabad, India public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Hyderabad metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-northeast-1",
+      "name": "Asia Pacific (Tokyo)",
+      "lat": 35.69,
+      "lon": 139.69,
+      "country": "Japan",
+      "continent": "Asia Pacific",
+      "launchYear": 2011,
+      "azCount": 4,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-northeast-1; Tokyo, Japan public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Tokyo metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-northeast-2",
+      "name": "Asia Pacific (Seoul)",
+      "lat": 37.57,
+      "lon": 126.98,
+      "country": "South Korea",
+      "continent": "Asia Pacific",
+      "launchYear": 2016,
+      "azCount": 4,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-northeast-2; Seoul, South Korea public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Seoul metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-northeast-3",
+      "name": "Asia Pacific (Osaka)",
+      "lat": 34.69,
+      "lon": 135.5,
+      "country": "Japan",
+      "continent": "Asia Pacific",
+      "launchYear": 2021,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-northeast-3; Osaka, Japan public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Osaka metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-southeast-1",
+      "name": "Asia Pacific (Singapore)",
+      "lat": 1.35,
+      "lon": 103.82,
+      "country": "Singapore",
+      "continent": "Asia Pacific",
+      "launchYear": 2010,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-southeast-1; Singapore public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Singapore centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-southeast-2",
+      "name": "Asia Pacific (Sydney)",
+      "lat": -33.87,
+      "lon": 151.21,
+      "country": "Australia",
+      "continent": "Oceania",
+      "launchYear": 2012,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-southeast-2; Sydney, Australia public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Sydney metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-southeast-3",
+      "name": "Asia Pacific (Jakarta)",
+      "lat": -6.21,
+      "lon": 106.85,
+      "country": "Indonesia",
+      "continent": "Asia Pacific",
+      "launchYear": 2021,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-southeast-3; Jakarta, Indonesia public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Jakarta metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-southeast-4",
+      "name": "Asia Pacific (Melbourne)",
+      "lat": -37.81,
+      "lon": 144.96,
+      "country": "Australia",
+      "continent": "Oceania",
+      "launchYear": 2023,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-southeast-4; Melbourne, Australia public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Melbourne metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-southeast-5",
+      "name": "Asia Pacific (Malaysia)",
+      "lat": 3.14,
+      "lon": 101.69,
+      "country": "Malaysia",
+      "continent": "Asia Pacific",
+      "launchYear": 2024,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-southeast-5; Kuala Lumpur, Malaysia public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Kuala Lumpur metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-southeast-7",
+      "name": "Asia Pacific (Thailand)",
+      "lat": 13.76,
+      "lon": 100.5,
+      "country": "Thailand",
+      "continent": "Asia Pacific",
+      "launchYear": 2025,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-southeast-7; Bangkok, Thailand public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Bangkok metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "ap-east-2",
+      "name": "Asia Pacific (Taipei)",
+      "lat": 25.03,
+      "lon": 121.57,
+      "country": "Taiwan",
+      "continent": "Asia Pacific",
+      "launchYear": 2025,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/ap-east-2; Taipei, Taiwan public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Taipei metro centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "mx-central-1",
+      "name": "Mexico (Central)",
+      "lat": 19.43,
+      "lon": -99.13,
+      "country": "Mexico",
+      "continent": "North America",
+      "launchYear": 2025,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "AWS Global Infrastructure docs + SSM public parameter /aws/service/global-infrastructure/regions/mx-central-1; Queretaro/Mexico City public centroid.",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate central Mexico (Mexico City reference) centroid; NOT a datacenter location.",
+        "license": "Derived compilation - see datasetProvenance."
+      }
+    }
+  ]
+}

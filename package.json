@@ -5,10 +5,17 @@
   "type": "module",
   "description": "Interactive map of AWS Regions for DR distance reasoning (AWS Builder Center 'Map It' hackathon).",
   "scripts": {
+    "sync:data": "node -e \"require('fs').copyFileSync('data/regions.v1.json','public/regions.v1.json')\"",
+    "predev": "npm run sync:data",
+    "prebuild": "npm run sync:data",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:contract": "vitest run tests/contract",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "maplibre-gl": "4.7.1",
@@ -18,12 +25,20 @@
   "devDependencies": {
     "@aws-amplify/backend": "1.8.0",
     "@aws-amplify/backend-cli": "1.4.2",
+    "@testing-library/jest-dom": "6.5.0",
+    "@testing-library/react": "16.0.1",
+    "@testing-library/user-event": "14.5.2",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "@vitejs/plugin-react": "4.3.3",
+    "@vitest/coverage-v8": "2.1.9",
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1",
     "aws-cdk-lib": "2.164.1",
     "constructs": "10.4.2",
+    "jsdom": "25.0.1",
     "typescript": "5.6.3",
-    "vite": "5.4.11"
+    "vite": "5.4.11",
+    "vitest": "2.1.9"
   }
 }
