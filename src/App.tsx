@@ -49,8 +49,8 @@ export default function App() {
           className={`app__map-mode ${isProductionMapStyle() ? 'is-prod' : 'is-local'}`}
           title={
             isProductionMapStyle()
-              ? 'Rendering the Amazon Location Service basemap (production).'
-              : 'Local demo basemap (no-auth OpenStreetMap raster). Swaps to Amazon Location Service in Phase D.'
+              ? 'Rendering the Amazon Location Service Maps v2 (Standard) basemap via a restricted API key.'
+              : 'Local demo basemap (no-auth OpenStreetMap raster). Set VITE_MAP_STYLE_URL (or VITE_MAP_API_KEY) to use Amazon Location Service Maps v2.'
           }
         >
           {isProductionMapStyle() ? 'Amazon Location Service' : 'Local demo basemap'}
