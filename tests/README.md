@@ -26,6 +26,25 @@ tests/
    └─ mapInteraction.test.tsx    # AC-1.1,2.x,3.x,4.5/4.6,5.6,6.x (RTL: selection→line, filter→markers, disclaimer)
 ```
 
+## Phase 4 — automated quality gates (OFFLINE vs LIVE)
+
+The deploy/infra quality gates (buildspec, CFN service role, preflight scripts,
+no-OSM-in-prod resolver, Cognito least-privilege, secret scan) live in:
+
+- `contract/amplifyBuildSpec.test.ts` — gates 1 & 2 (buildspec + root CLI deps)
+- `contract/amplifyServiceRole.test.ts` — gate 3 (CFN IAM role, real YAML parse)
+- `contract/secretScan.test.ts` — gates 4 & 7 (scripts + repo-wide secret scan)
+- `unit/mapStyleProdContract.test.ts` + `unit/mapStyleResolution.test.ts` — gate 5
+- `contract/mapAuth.test.ts` — gate 6 (Cognito unauth least-privilege)
+
+These are **config-correctness only**. Which gate is OFFLINE (proven here) vs
+LIVE-REQUIRED (needs real AWS + a browser — `ampx pipeline-deploy` success,
+Cognito pool creation, a real `geo-maps:GetTile` 200 / `GetStaticMap` 403, and
+WebGL tile render) is spelled out in the gate matrix in
+[`../docs/DEPLOY_TEST_LIMITS.md`](../docs/DEPLOY_TEST_LIMITS.md). **No unit test
+here proves a successful AWS deployment.** Also run `scripts/preflight.sh`
+(offline tier) — it must exit 0.
+
 ## Status: skeletons
 
 All suites are `describe.skip` and import from **intended** module paths owned by
