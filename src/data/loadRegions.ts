@@ -64,6 +64,25 @@ export function assertDataset(value: unknown): asserts value is RegionDataset {
   }
 }
 
+/**
+ * Synchronous validator form: assert that `raw` satisfies the frozen contract
+ * (`schemaVersion === 1`, `regions` is an array) and return it narrowed to a
+ * {@link RegionDataset}.
+ *
+ * This mirrors the `loadRegions(raw: unknown): RegionDataset` shape the test
+ * suite assumes (`tests/unit/dataLoader.test.ts`) and is re-exported from
+ * `src/lib/regions.ts`. The async {@link loadRegions} below is the runtime
+ * fetch-with-fallback used by the app.
+ *
+ * @param raw - An untrusted parsed JSON value.
+ * @returns The same value, narrowed to {@link RegionDataset}.
+ * @throws {SchemaMismatchError} If the version or top-level shape is wrong.
+ */
+export function validateDataset(raw: unknown): RegionDataset {
+  assertDataset(raw);
+  return raw;
+}
+
 /** Return the bundled sample fixture, validated. */
 export function loadFixtureDataset(): RegionDataset {
   const value: unknown = sampleFixture;
