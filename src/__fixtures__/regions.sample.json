@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "generatedDate": "2026-10-30",
+  "datasetProvenance": {
+    "source": "FIXTURE ONLY — not the real dataset. Real metadata comes from AWS Global Infrastructure docs + SSM public parameters (/aws/service/global-infrastructure/...); coordinates from a redistribution-cleared centroid source. Owned/produced by map-data in data/regions.v1.json.",
+    "retrievedDate": "2026-10-30",
+    "accuracyNote": "FIXTURE: coordinates are approximate region-city centroids for typecheck/build only, NOT AWS datacenter locations. AWS does not publish datacenter coordinates.",
+    "license": "Fixture sample for frontend typecheck/build only — see docs/DATA_CONTRACT.md."
+  },
+  "regions": [
+    {
+      "regionCode": "us-east-1",
+      "name": "US East (N. Virginia)",
+      "lat": 38.95,
+      "lon": -77.45,
+      "country": "United States",
+      "continent": "North America",
+      "launchYear": 2006,
+      "azCount": 6,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "FIXTURE — N. Virginia metro centroid placeholder",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate N. Virginia metro centroid; NOT a datacenter location.",
+        "license": "Fixture sample — see datasetProvenance."
+      }
+    },
+    {
+      "regionCode": "eu-west-1",
+      "name": "Europe (Ireland)",
+      "lat": 53.35,
+      "lon": -6.26,
+      "country": "Ireland",
+      "continent": "Europe",
+      "launchYear": 2007,
+      "azCount": 3,
+      "geographyType": "commercial",
+      "provenance": {
+        "source": "FIXTURE — Dublin metro centroid placeholder",
+        "retrievedDate": "2026-10-30",
+        "accuracyNote": "Approximate Dublin metro centroid; NOT a datacenter location.",
+        "license": "Fixture sample — see datasetProvenance."
+      }
+    }
+  ]
+}

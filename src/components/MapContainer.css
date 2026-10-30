@@ -1,0 +1,40 @@
+.map {
+  position: relative;
+  width: 100%;
+  min-height: 420px;
+  flex: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+}
+
+.map__canvas {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(128, 128, 128, 0.06),
+    rgba(128, 128, 128, 0.06) 12px,
+    rgba(128, 128, 128, 0.12) 12px,
+    rgba(128, 128, 128, 0.12) 24px
+  );
+}
+
+.map__placeholder {
+  text-align: center;
+  padding: 1rem;
+}
+
+.map__placeholder-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.map__placeholder-sub {
+  margin: 0.25rem 0 0;
+  opacity: 0.75;
+  font-size: 0.9rem;
+}
