@@ -15,8 +15,7 @@ import { auth } from './auth/resource';
  * (https://maps.geo.eu-west-1.amazonaws.com/v2/styles/Standard/descriptor)
  * returns real MapLibre style JSON.
  *
- * MAP-AUTH: COGNITO UNAUTHENTICATED (GUEST) IDENTITY POOL — ADDED ALONGSIDE
- * THE API KEY (TRANSITIONAL).
+ * MAP-AUTH: COGNITO UNAUTHENTICATED (GUEST) IDENTITY POOL — SOLE MECHANISM.
  * -----------------------------------------------------------------------
  * A direct SigV4 call to `geo-maps:GetTile` as a normal admin principal is
  * rejected with an IMPLICIT deny: "not authorized to perform geo-maps:GetTile
@@ -29,15 +28,18 @@ import { auth } from './auth/resource';
  *
  * We wire `defineAuth` (guest/unauthenticated enabled, no login UI — see
  * amplify/auth/resource.ts) and attach a least-privilege inline policy
- * (geo-maps:GetTile on the single provider ARN) to the unauth role below.
+ * (geo-maps:GetTile on the single provider ARN) to the unauth role below. The
+ * frontend exchanges anonymous Cognito guest credentials and SigV4-signs every
+ * map request via the amazon-location-utilities-auth-helper transformRequest.
  *
- * TRANSITIONAL: the CfnAPIKey below is INTENTIONALLY RETAINED for this deploy so
- * nothing breaks. Two auth paths coexist on purpose and safely. The API key
- * will be REMOVED in a follow-up ONLY ONCE Cognito-signed tiles are verified
- * working. Do not delete the key until then.
+ * API KEY REMOVED. The earlier transitional CfnAPIKey has been deleted from
+ * this backend now that Cognito-signed GetTile is VERIFIED serving v2 tiles
+ * (guest-cred GetTile → 200; GetStaticMap → 403, least privilege). Cognito is
+ * the SOLE map-auth mechanism: no API key, no key string shipped to the
+ * browser. (A legacy key may linger in the test account until it can be deleted
+ * — see docs/GIT_WORKFLOW.md §6.)
  *
- * STRUCTURE ONLY: this file defines resources. Nothing here deploys. No
- * `ampx` / `amplify sandbox` has been run as part of authoring this file.
+ * STRUCTURE ONLY: this file defines resources. Nothing here deploys.
  */
 const backend = defineBackend({
   // Cognito guest/unauthenticated identity pool — the principal that carries
