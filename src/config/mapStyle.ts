@@ -28,16 +28,27 @@
  *      `?key=<apiKey>`. Used verbatim. (Simplest local-dev override.)
  *   2. `VITE_MAP_STYLE_DESCRIPTOR` + `VITE_MAP_API_KEY` — base descriptor URL
  *      and raw key, composed here into `${descriptor}?key=${apiKey}`.
- *   3. `amplify_outputs.json` `custom.mapStyleUrl` (base descriptor URL) + a raw
+ *   3. COGNITO SigV4 — `amplify_outputs.json` carries a Cognito guest identity
+ *      pool (`auth.identity_pool_id`). Use the v2 style-descriptor URL
+ *      (`custom.mapStyleUrl`, else the eu-west-1 default) **WITHOUT `?key=`**:
+ *      auth is now SigV4 via the MapLibre `transformRequest` (guest credentials),
+ *      NOT an API key in the URL. See `src/config/mapAuth.ts`.
+ *   4. `amplify_outputs.json` `custom.mapStyleUrl` (base descriptor URL) + a raw
  *      key from `VITE_MAP_API_KEY` (or `custom.mapApiKey` if a deploy wires the
  *      raw value in; `CfnAPIKey` exposes only name/ARN, so the raw key is
  *      resolved at runtime — see §5). Composed into `${mapStyleUrl}?key=${key}`.
- *   4. FALLBACK — a free, no-auth OpenStreetMap raster style, so the app runs
+ *      TRANSITIONAL API-key path, retained alongside the Cognito path.
+ *   5. FALLBACK — a free, no-auth OpenStreetMap raster style, so the app runs
  *      with ZERO AWS configuration.
  *
  * Everything downstream consumes the single value returned by `resolveMapStyle()`.
  */
 import type { StyleSpecification } from 'maplibre-gl';
+import { resolveCognitoMapConfig } from './mapAuth';
+
+/** v2 MapLibre Standard style-descriptor endpoint (no key — SigV4 via transformRequest). */
+const V2_STANDARD_DESCRIPTOR_DEFAULT =
+  'https://maps.geo.eu-west-1.amazonaws.com/v2/styles/Standard/descriptor';
 
 /**
  * A free, no-authentication OpenStreetMap raster style. OSM standard tiles are
@@ -79,6 +90,22 @@ interface AmplifyOutputs {
     mapApiKeyName?: string;
     mapRegion?: string;
   };
+}
+
+/**
+ * Resolve the v2 style-descriptor URL for the Cognito SigV4 path (NO `?key=`),
+ * or `undefined` when no Cognito guest identity pool is configured. Prefers the
+ * deploy-emitted `custom.mapStyleUrl` base descriptor, else the eu-west-1
+ * default. Auth is SigV4 via `transformRequest` (see `src/config/mapAuth.ts`),
+ * so NO api key is appended.
+ */
+function resolveCognitoStyleUrl(): string | undefined {
+  if (!resolveCognitoMapConfig()) {
+    return undefined;
+  }
+  const outputs = loadAmplifyOutputs();
+  const base = outputs?.custom?.mapStyleUrl;
+  return base && base.length > 0 ? base : V2_STANDARD_DESCRIPTOR_DEFAULT;
 }
 
 /**
@@ -127,7 +154,14 @@ function resolveProductionStyleUrl(): string | undefined {
     return withKey(descriptor, envKey);
   }
 
-  // 3. amplify_outputs.json base URL + a raw key (env, or an injected raw value).
+  // 3. COGNITO SigV4: v2 descriptor URL WITHOUT ?key= (auth via transformRequest).
+  const cognitoUrl = resolveCognitoStyleUrl();
+  if (cognitoUrl) {
+    return cognitoUrl;
+  }
+
+  // 4. amplify_outputs.json base URL + a raw key (env, or an injected raw value).
+  //    TRANSITIONAL API-key path, retained alongside the Cognito path.
   const outputs = loadAmplifyOutputs();
   const outUrl = outputs?.custom?.mapStyleUrl;
   const outKey = envKey ?? outputs?.custom?.mapApiKey;
@@ -135,7 +169,7 @@ function resolveProductionStyleUrl(): string | undefined {
     return withKey(outUrl, outKey);
   }
 
-  // 4. No v2 key/URL configured.
+  // 5. No v2 key/URL/Cognito configured.
   return undefined;
 }
 
@@ -158,9 +192,34 @@ export function resolveMapStyle(): string | StyleSpecification {
 
 /**
  * Whether the resolved style is the production Amazon Location Service v2 style
- * (i.e. a v2 descriptor URL + key is active). False means the OSM raster
- * fallback is in use.
+ * (i.e. a v2 descriptor URL + key is active, OR the Cognito SigV4 path). False
+ * means the OSM raster fallback is in use.
  */
 export function isProductionMapStyle(): boolean {
   return resolveProductionStyleUrl() !== undefined;
+}
+
+/**
+ * Whether the active style is served over the Cognito SigV4 path (guest
+ * credentials + MapLibre `transformRequest`, no `?key=` in the URL). When true,
+ * the map must be wired with the auth-helper `transformRequest` from
+ * `src/config/mapAuth.ts`. The env-provided URL/key tiers (1, 2, 4) take
+ * precedence over Cognito, so this is true only when Cognito is the resolved
+ * production path.
+ */
+export function isCognitoMapStyle(): boolean {
+  const env = import.meta.env;
+  const envUrl = env.VITE_MAP_STYLE_URL as string | undefined;
+  const descriptor = env.VITE_MAP_STYLE_DESCRIPTOR as string | undefined;
+  const envKey = env.VITE_MAP_API_KEY as string | undefined;
+  const envUrlActive = !!(envUrl && envUrl.length > 0);
+  const envPairActive = !!(
+    descriptor &&
+    descriptor.length > 0 &&
+    envKey &&
+    envKey.length > 0
+  );
+  // Cognito is only the resolved path when the higher-precedence env tiers are
+  // not active and a Cognito identity pool is configured.
+  return !envUrlActive && !envPairActive && resolveCognitoStyleUrl() !== undefined;
 }

@@ -30,35 +30,84 @@ React + TypeScript + Vite single-page app implementing the six MVP features per
 The backend migrated from classic Location maps to **Amazon Location Service
 Maps v2** (the `geo-maps` service). v2 is a MANAGED service: the "Standard"
 MapLibre style is provider-managed (no per-account map resource), served from a
-v2 style-descriptor endpoint and authorised by a restricted API key passed as
-the `?key=` query param:
+v2 style-descriptor endpoint:
 
 ```
-https://maps.geo.eu-west-1.amazonaws.com/v2/styles/Standard/descriptor?key=<apiKey>
+https://maps.geo.eu-west-1.amazonaws.com/v2/styles/Standard/descriptor
 ```
 
-MapLibre accepts that full style-descriptor URL (with `?key=`) directly as its
-`style`. The style is resolved behind a single config point,
-`src/config/mapStyle.ts`.
+MapLibre accepts a v2 style-descriptor URL directly as its `style`. The style is
+resolved behind a single config point, `src/config/mapStyle.ts`, and the
+request-signing for the auth path is built in `src/config/mapAuth.ts`.
+
+### Map auth — Cognito guest credentials + SigV4 `transformRequest` (PRIMARY)
+
+The primary production auth path is a **Cognito UNAUTHENTICATED (guest) identity
+pool**, NOT an API key in the URL:
+
+- The backend (`amplify/backend.ts` + `amplify/auth/resource.ts`) defines
+  `defineAuth` with guest/unauthenticated access enabled (no login UI) and
+  attaches a least-privilege **`geo-maps:GetTile`** Allow to the guest (unauth)
+  IAM role on the provider ARN `arn:aws:geo-maps:eu-west-1::provider/default`.
+  That explicit Allow is what resolves the implicit deny a plain SigV4 call
+  hits; `GetStyleDescriptor` / `GetGlyphs` / `GetSprites` return 200 for the
+  managed Standard style without any grant.
+- At deploy, `defineAuth` emits an **`auth` block** into `amplify_outputs.json`
+  with `identity_pool_id` + `aws_region` (alongside the existing
+  `custom.mapStyleUrl` / `custom.mapRegion`).
+- `src/config/mapAuth.ts` reads that block, calls `Amplify.configure(outputs)`
+  (`aws-amplify`), then builds a MapLibre `transformRequest` from the installed
+  **`@aws/amazon-location-utilities-auth-helper`**:
+  `withIdentityPoolId(identityPoolId)` → `getMapAuthenticationOptions()` →
+  `{ transformRequest }`. The helper exchanges anonymous Cognito **guest**
+  credentials (via `fromCognitoIdentityPool`, region derived from the id prefix)
+  and sets up automatic refresh.
+- `src/components/MapView.tsx` wires that `transformRequest` into the MapLibre
+  `Map` constructor, so **every** style/tile/glyph/sprite request to
+  `*.amazonaws.com` is **SigV4-signed** with the temporary guest credentials.
+  On this path the style-descriptor URL carries **NO `?key=`** — auth is SigV4,
+  not an API key.
+- The auth-helper and `aws-amplify` are imported **dynamically** (lazy), so the
+  AWS SDK v3 Cognito credential-provider tree is pulled into a separate async
+  chunk loaded ONLY when a Cognito identity pool is configured — the zero-AWS
+  OSM path ships none of it. `vite.config.ts` aliases the Node-only credential
+  providers (`@aws-sdk/credential-provider-{login,process,sso,ini,node}`) to an
+  empty stub (`src/lib/emptyModule.ts`); the guest path only ever calls
+  `fromCognitoIdentityPool` (Cognito Identity HTTP API — no filesystem / SSO /
+  process credentials), so those modules are dead code in the browser and their
+  `node:fs` / `node:os` named imports are kept out of the bundle.
+
+**Non-secret config only.** The identity pool id, region and style URL are the
+only values exposed — all of which `amplify_outputs.json` provides. The guest
+identity pool mints temporary credentials client-side; nothing static or secret
+ships to the browser.
 
 ### Resolution precedence (first match wins)
 
-`resolveMapStyle()` / `isProductionMapStyle()` pick the style in this order:
+`resolveMapStyle()` / `isProductionMapStyle()` / `isCognitoMapStyle()` pick the
+style in this order:
 
 1. **`VITE_MAP_STYLE_URL`** — a FULL v2 style-descriptor URL that already
    includes `?key=<apiKey>`. Used verbatim.
 2. **`VITE_MAP_STYLE_DESCRIPTOR` + `VITE_MAP_API_KEY`** — the base descriptor URL
    and the raw key, composed here into `${descriptor}?key=${apiKey}`.
-3. **`amplify_outputs.json`** `custom.mapStyleUrl` (base descriptor URL, emitted
-   by `amplify/backend.ts`) + a raw key from `VITE_MAP_API_KEY` (or
-   `custom.mapApiKey` if a deploy wires the raw value in — `CfnAPIKey` exposes
-   only name/ARN, so the raw key value is resolved at runtime; see ARCHITECTURE
-   §5). Composed into `${mapStyleUrl}?key=${key}`.
-4. **FALLBACK** — a free, **no-auth** OpenStreetMap raster style, inline, so the
-   app runs with **zero AWS configuration**.
+3. **COGNITO SigV4** — `amplify_outputs.json` carries `auth.identity_pool_id`.
+   Use the v2 style-descriptor URL (`custom.mapStyleUrl`, else the eu-west-1
+   default) **WITHOUT `?key=`**; auth is SigV4 via the `transformRequest` above.
+   `isCognitoMapStyle()` is true only when the env tiers (1, 2) are not active
+   and a Cognito identity pool is configured.
+4. **`amplify_outputs.json`** `custom.mapStyleUrl` + a raw key from
+   `VITE_MAP_API_KEY` (or `custom.mapApiKey`). Composed into
+   `${mapStyleUrl}?key=${key}`. TRANSITIONAL API-key path, retained alongside
+   the Cognito path (the backend keeps a `CfnAPIKey` until Cognito-signed tiles
+   are verified).
+5. **FALLBACK** — a free, **no-auth** OpenStreetMap raster style, inline, so the
+   app runs with **zero AWS configuration** (local dev with no deploy).
 
 `amplify_outputs.json` is **gitignored** and only present after a deploy; it is
-imported optionally (via a Vite glob) so a missing file never breaks the build.
+imported optionally (via a Vite glob in both `mapStyle.ts` and `mapAuth.ts`) so
+a missing file never breaks the build — the app falls through to the OSM
+fallback and `aws-amplify` / the auth-helper are never loaded at runtime.
 
 ### Running locally with a real v2 key (live tiles)
 
