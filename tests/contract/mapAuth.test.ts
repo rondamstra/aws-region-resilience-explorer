@@ -153,22 +153,17 @@ describe('Map auth — Cognito unauth geo-maps:GetTile grant (regression)', () =
     }
   });
 
-  // ---- 4 (cont). Retained transitional key: referer + expiry ---------------
-  it('RETAINS the transitional API key with geo-maps:* scoped to the provider ARN', () => {
-    // geo-maps:* on the KEY (allowActions) is acceptable transitionally.
-    expect(backendSrc).toMatch(/new\s+CfnAPIKey\s*\(/);
-    expect(backendSrc).toMatch(/allowActions:\s*\[\s*'geo-maps:\*'\s*\]/);
-    expect(backendSrc).toMatch(/allowResources:\s*\[\s*mapProviderArn\s*\]/);
+  // ---- 4 (cont). API key REMOVED — Cognito is the sole auth mechanism ------
+  // The transitional CfnAPIKey has been removed now that Cognito guest-cred
+  // SigV4 is verified serving v2 tiles. These tests FAIL if an API key returns.
+  it('does NOT create any CfnAPIKey (Cognito is the sole map-auth mechanism)', () => {
+    expect(backendSrc).not.toMatch(/new\s+CfnAPIKey\s*\(/);
+    expect(backendSrc).not.toMatch(/import\s*\{[^}]*\bCfnAPIKey\b[^}]*\}/);
   });
 
-  it('keeps the retained key referrer-locked', () => {
-    expect(backendSrc).toMatch(
-      /allowReferers:\s*\[['"]https:\/\/\*\.amplifyapp\.com['"]\]/,
-    );
-  });
-
-  it('keeps the retained key expiring (noExpiry: false with an expireTime)', () => {
-    expect(backendSrc).toMatch(/noExpiry:\s*false/);
-    expect(backendSrc).toMatch(/expireTime:\s*'20\d\d-\d\d-\d\dT/);
+  it('ships NO API key restrictions and NO key name/arn in outputs', () => {
+    expect(backendSrc).not.toMatch(/allowActions:/);
+    expect(backendSrc).not.toMatch(/allowReferers:/);
+    expect(backendSrc).not.toMatch(/mapApiKeyName|mapApiKeyArn/);
   });
 });

@@ -1,5 +1,4 @@
 import { defineBackend } from '@aws-amplify/backend';
-import { CfnAPIKey } from 'aws-cdk-lib/aws-location';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { auth } from './auth/resource';
 
@@ -78,37 +77,22 @@ const geoStack = backend.createStack('geo');
 const mapStyleUrl =
   'https://maps.geo.eu-west-1.amazonaws.com/v2/styles/Standard/descriptor';
 
-// RETAINED FOR THIS DEPLOY ONLY. Restricted, read-only, referrer-locked,
-// EXPIRING API key scoped to the v2 geo-maps provider. Kept in place alongside
-// the Cognito path so the current map does not break during the transition.
-// REMOVE THIS CfnAPIKey IN A FOLLOW-UP once Cognito-signed GetTile is verified
-// working end-to-end. Two auth paths coexist temporarily — intentional and safe.
-const mapKey = new CfnAPIKey(geoStack, 'RegionExplorerMapKey', {
-  keyName: 'region-explorer-map-key',
-  forceUpdate: true,
-  noExpiry: false,
-  expireTime: '2027-01-28T00:00:00Z',
-  restrictions: {
-    allowActions: ['geo-maps:*'],
-    allowResources: [mapProviderArn],
-    allowReferers: ['https://*.amplifyapp.com'],
-  },
-});
+// API KEY REMOVED. The transitional CfnAPIKey (region-explorer-map-key) has been
+// deleted now that Cognito guest-credential SigV4 auth is VERIFIED serving v2
+// tiles (GetTile 200 with guest creds; GetStaticMap correctly 403 — least
+// privilege). Cognito is the SOLE map-auth mechanism: no API key, no key string
+// shipped to the browser. The geo stack is retained only to hold the provider
+// ARN reference used by the unauth-role grant above.
 
 // Surface v2 map config as build-time outputs so the React app reads them from
 // the generated config. The Cognito identity pool id + region are emitted
 // automatically by defineAuth into amplify_outputs.json (the `auth` block), so
-// the frontend can use the amazon-location-utilities-auth-helper to exchange
-// guest credentials. Only NON-SECRET config is exposed here (style URL, region,
-// key NAME/ARN — never the raw key string, which CfnAPIKey does not expose as a
-// CloudFormation attribute).
+// the frontend uses the amazon-location-utilities-auth-helper to exchange guest
+// credentials and SigV4-sign map requests. Only NON-SECRET config is exposed.
 backend.addOutput({
   custom: {
     mapStyleUrl,
     mapRegion: geoStack.region,
-    // Retained for the transitional API-key path; removed with the key.
-    mapApiKeyName: 'region-explorer-map-key',
-    mapApiKeyArn: mapKey.attrKeyArn,
   },
 });
 
