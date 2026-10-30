@@ -12,14 +12,13 @@
  *
  * DATASET (owned by map-data): data/regions.v1.json
  *
- * `describe.skip` until src/lib/regions and data/regions.v1.json exist.
+ * WIRED: loadRegions (src/lib/regions -> validateDataset) is exercised against
+ * the REAL dataset; mutation tests prove it throws on schemaVersion!==1 and on
+ * a broken top-level shape.
  */
 import { describe, it, expect } from 'vitest';
-
-// TODO(integration): enable once map-frontend ships src/lib/regions.
-// import { loadRegions } from '../../src/lib/regions';
-// TODO(integration): enable once map-data ships data/regions.v1.json.
-// import datasetRaw from '../../data/regions.v1.json';
+import { loadRegions } from '../../src/lib/regions';
+import datasetRaw from '../../data/regions.v1.json' with { type: 'json' };
 
 const CONTINENTS = [
   'North America', 'South America', 'Europe', 'Africa',
@@ -58,20 +57,34 @@ const FIXTURE = {
   ],
 };
 
-describe.skip('loadRegions — data loader (AC-7.2 .. AC-7.4)', () => {
-  // Swap FIXTURE for `datasetRaw` once data/regions.v1.json exists.
-  const raw = FIXTURE;
+describe('loadRegions — data loader against the REAL dataset (AC-7.2 .. AC-7.5)', () => {
+  // The REAL dataset shipped by map-data.
+  const raw = datasetRaw as typeof FIXTURE & {
+    regions: Array<(typeof FIXTURE)['regions'][number]>;
+  };
 
-  it('AC-7.2: asserts schemaVersion === 1', () => {
-    // const ds = loadRegions(raw);
-    // expect(ds.schemaVersion).toBe(1);
-    expect(raw.schemaVersion).toBe(1); // placeholder until loader import is enabled
+  it('AC-7.2: loadRegions(real file) asserts & returns schemaVersion === 1', () => {
+    const ds = loadRegions(raw);
+    expect(ds.schemaVersion).toBe(1);
   });
 
-  it('throws when schemaVersion !== 1 (version mismatch guard)', () => {
+  it('loadRegions returns the dataset with all 33 regions', () => {
+    const ds = loadRegions(raw);
+    expect(ds.regions).toHaveLength(33);
+  });
+
+  it('throws on a MUTATED copy with schemaVersion !== 1 (version mismatch guard)', () => {
     const wrong = { ...raw, schemaVersion: 2 };
-    // expect(() => loadRegions(wrong)).toThrow();
-    expect(wrong.schemaVersion).not.toBe(1); // placeholder
+    expect(() => loadRegions(wrong)).toThrow();
+  });
+
+  it('throws when regions is not an array (top-level shape guard)', () => {
+    const broken = { ...raw, regions: 'nope' as unknown as typeof raw.regions };
+    expect(() => loadRegions(broken)).toThrow();
+  });
+
+  it('throws on a non-object input', () => {
+    expect(() => loadRegions(null)).toThrow();
   });
 
   it('every record has all required fields non-null', () => {
