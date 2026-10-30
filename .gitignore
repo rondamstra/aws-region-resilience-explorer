@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.vite/
+
+# Amplify generated / local
+.amplify/
+amplify_outputs*.json
+amplifyconfiguration*.json
+
+# Git worktrees used for parallel mate development
+.worktrees/
+
+# Environment / local
+.env
+.env.*
+.DS_Store
+*.log
